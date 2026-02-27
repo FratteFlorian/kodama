@@ -1,0 +1,16 @@
+# Binary
+kodama
+
+# Data directory
+data/
+
+# Mock binaries (built by make mock-binaries)
+tests/mocks/claude/claude
+tests/mocks/codex/codex
+
+# Coverage
+coverage.out
+coverage.html
+
+# OS
+.DS_Store

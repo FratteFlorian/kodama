@@ -1,0 +1,153 @@
+package telegram
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strconv"
+	"strings"
+	"sync"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+// Bot is the Telegram bot for Kodama notifications and question answering.
+type Bot struct {
+	api    *tgbotapi.BotAPI
+	userID int64
+
+	// Pending question channels keyed by task ID.
+	questions map[int64]chan string
+	mu        sync.Mutex
+}
+
+// New creates and returns a new Bot.
+// token is the Telegram bot token; userID is the single whitelisted user.
+func New(token string, userID int64) (*Bot, error) {
+	api, err := tgbotapi.NewBotAPI(token)
+	if err != nil {
+		return nil, fmt.Errorf("create telegram bot: %w", err)
+	}
+	return &Bot{
+		api:       api,
+		userID:    userID,
+		questions: make(map[int64]chan string),
+	}, nil
+}
+
+// Start begins polling for incoming Telegram messages.
+func (b *Bot) Start(ctx context.Context) {
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 30
+
+	updates := b.api.GetUpdatesChan(u)
+
+	for {
+		select {
+		case <-ctx.Done():
+			b.api.StopReceivingUpdates()
+			return
+		case update, ok := <-updates:
+			if !ok {
+				return
+			}
+			if update.Message == nil {
+				continue
+			}
+			// Whitelist enforcement — silently ignore all other users.
+			if update.Message.From.ID != b.userID {
+				slog.Debug("ignoring message from non-whitelisted user", "user_id", update.Message.From.ID)
+				continue
+			}
+			b.handleMessage(update.Message)
+		}
+	}
+}
+
+// SendNotification sends a text notification to the whitelisted user.
+func (b *Bot) SendNotification(msg string) {
+	if b.userID == 0 {
+		return
+	}
+	m := tgbotapi.NewMessage(b.userID, msg)
+	if _, err := b.api.Send(m); err != nil {
+		slog.Error("telegram send notification", "err", err)
+	}
+}
+
+// SendQuestion sends a question notification and returns a channel for the reply.
+// The channel will receive exactly one string (the user's reply).
+func (b *Bot) SendQuestion(taskID int64, question string) (<-chan string, error) {
+	ch := make(chan string, 1)
+
+	b.mu.Lock()
+	b.questions[taskID] = ch
+	b.mu.Unlock()
+
+	msg := fmt.Sprintf("Task #%d is waiting for input:\n\n%s\n\nReply with: /answer %d <your answer>",
+		taskID, question, taskID)
+	b.SendNotification(msg)
+
+	return ch, nil
+}
+
+// handleMessage processes an incoming Telegram message from the whitelisted user.
+func (b *Bot) handleMessage(msg *tgbotapi.Message) {
+	text := strings.TrimSpace(msg.Text)
+
+	// Handle /answer <taskID> <answer> command.
+	if strings.HasPrefix(text, "/answer ") {
+		parts := strings.SplitN(text[len("/answer "):], " ", 2)
+		if len(parts) < 2 {
+			b.reply(msg, "Usage: /answer <task_id> <your answer>")
+			return
+		}
+		taskID, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
+		if err != nil {
+			b.reply(msg, "Invalid task ID")
+			return
+		}
+		answer := strings.TrimSpace(parts[1])
+
+		b.mu.Lock()
+		ch, ok := b.questions[taskID]
+		if ok {
+			delete(b.questions, taskID)
+		}
+		b.mu.Unlock()
+
+		if !ok {
+			b.reply(msg, fmt.Sprintf("No waiting question for task #%d", taskID))
+			return
+		}
+
+		ch <- answer
+		b.reply(msg, fmt.Sprintf("Answer sent to task #%d", taskID))
+		return
+	}
+
+	// If there's only one pending question, treat any reply as the answer.
+	b.mu.Lock()
+	if len(b.questions) == 1 {
+		for taskID, ch := range b.questions {
+			delete(b.questions, taskID)
+			b.mu.Unlock()
+			ch <- text
+			b.reply(msg, fmt.Sprintf("Answer sent to task #%d", taskID))
+			return
+		}
+	}
+	b.mu.Unlock()
+
+	// Default: echo help.
+	b.reply(msg, "Kodama bot active. Use /answer <task_id> <answer> to reply to a waiting task.")
+}
+
+// reply sends a reply message.
+func (b *Bot) reply(orig *tgbotapi.Message, text string) {
+	m := tgbotapi.NewMessage(orig.Chat.ID, text)
+	m.ReplyToMessageID = orig.MessageID
+	if _, err := b.api.Send(m); err != nil {
+		slog.Error("telegram reply", "err", err)
+	}
+}

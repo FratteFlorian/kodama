@@ -1,0 +1,85 @@
+{{template "layout.html" .}}
+
+{{define "title"}}{{.Project.Name}} — Kodama{{end}}
+
+{{define "content"}}
+<div class="container">
+    <div class="page-header">
+        <div>
+            <a href="/" class="back-link">← Projects</a>
+            <h1>{{.Project.Name}}</h1>
+            <span class="project-meta">{{.Project.RepoPath}}</span>
+        </div>
+        <div class="project-controls">
+            {{if .IsRunning}}
+                <span class="badge status-running">Running</span>
+                <form method="POST" action="/projects/{{.Project.ID}}/stop" style="display:inline">
+                    <button type="submit" class="btn btn-danger">Stop</button>
+                </form>
+            {{else}}
+                <form method="POST" action="/projects/{{.Project.ID}}/start" style="display:inline">
+                    <button type="submit" class="btn btn-primary">▶ Start</button>
+                </form>
+            {{end}}
+        </div>
+    </div>
+
+    <section class="backlog">
+        <h2>Backlog</h2>
+        {{if .Tasks}}
+            <div class="task-list">
+                {{range .Tasks}}
+                <div class="task-item">
+                    <div class="task-info">
+                        <span class="task-status badge status-{{statusBadge .Status}}">{{.Status}}</span>
+                        <a href="/tasks/{{.ID}}" class="task-desc">{{.Description}}</a>
+                    </div>
+                    <div class="task-controls">
+                        <form method="POST" action="/projects/{{$.Project.ID}}/tasks/{{.ID}}" style="display:inline">
+                            <input type="hidden" name="_method" value="PUT">
+                            <select name="agent" onchange="this.form.submit()">
+                                <option value="claude" {{if eq .Agent "claude"}}selected{{end}}>Claude</option>
+                                <option value="codex" {{if eq .Agent "codex"}}selected{{end}}>Codex</option>
+                                <option value="" {{if eq .Agent ""}}selected{{end}}>Default</option>
+                            </select>
+                        </form>
+                        <form method="POST" action="/projects/{{$.Project.ID}}/tasks/{{.ID}}" style="display:inline">
+                            <input type="hidden" name="_method" value="DELETE">
+                            <button type="submit" class="btn btn-sm btn-danger">✕</button>
+                        </form>
+                    </div>
+                </div>
+                {{end}}
+            </div>
+        {{else}}
+            <p class="empty">No tasks yet.</p>
+        {{end}}
+    </section>
+
+    <section class="add-task">
+        <h2>Add Task</h2>
+        <form method="POST" action="/projects/{{.Project.ID}}/tasks">
+            <div class="form-group">
+                <label for="description">Task Description</label>
+                <textarea id="description" name="description" rows="3" required
+                    placeholder="Implement user authentication with JWT tokens"></textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="task-agent">Agent</label>
+                    <select id="task-agent" name="agent">
+                        <option value="">Default ({{.Project.Agent}})</option>
+                        <option value="claude">Claude Code</option>
+                        <option value="codex">Codex</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="priority">Priority</label>
+                    <input type="number" id="priority" name="priority" value="0" min="0">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Add Task</button>
+        </form>
+    </section>
+</div>
+{{end}}
