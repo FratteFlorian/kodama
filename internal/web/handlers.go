@@ -78,6 +78,7 @@ func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
 		"Project":   proj,
 		"Tasks":     tasks,
 		"IsRunning": s.daemon != nil && s.daemon.IsRunning(proj.ID),
+		"Msg":       r.URL.Query().Get("msg"),
 	})
 }
 
@@ -123,6 +124,22 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/projects/%d", proj.ID), http.StatusSeeOther)
 }
 
+// handleUpdateTaskAgent is a POST-only route for HTML form agent changes.
+func (s *Server) handleUpdateTaskAgent(w http.ResponseWriter, r *http.Request) {
+	tid, err := getIDParam(r, "tid")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.db.UpdateTaskAgent(tid, r.FormValue("agent"))
+	proj, _ := s.getProject(r)
+	http.Redirect(w, r, fmt.Sprintf("/projects/%d", proj.ID), http.StatusSeeOther)
+}
+
 func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 	tid, err := getIDParam(r, "tid")
 	if err != nil {
@@ -140,10 +157,22 @@ func (s *Server) handleStartProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	if s.daemon != nil {
-		s.daemon.StartProject(context.Background(), proj.ID)
+	pending, err := s.db.ListPendingTasks(proj.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/projects/%d", proj.ID), http.StatusSeeOther)
+	if len(pending) == 0 {
+		http.Redirect(w, r, fmt.Sprintf("/projects/%d?msg=no_tasks", proj.ID), http.StatusSeeOther)
+		return
+	}
+	if s.daemon != nil {
+		if err := s.daemon.StartProject(context.Background(), proj.ID); err != nil {
+			http.Redirect(w, r, fmt.Sprintf("/projects/%d?msg=already_running", proj.ID), http.StatusSeeOther)
+			return
+		}
+	}
+	http.Redirect(w, r, fmt.Sprintf("/projects/%d?msg=started", proj.ID), http.StatusSeeOther)
 }
 
 func (s *Server) handleStopProject(w http.ResponseWriter, r *http.Request) {

@@ -227,5 +227,16 @@ pre#output {
 /* Empty state */
 .empty { color: var(--muted); font-style: italic; padding: 1rem 0; }
 
+/* Flash messages */
+.flash {
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1.25rem;
+    font-size: 0.9375rem;
+}
+.flash-no_tasks    { background: rgba(251,191,36,0.12); color: var(--yellow); border: 1px solid rgba(251,191,36,0.3); }
+.flash-started     { background: rgba(74,222,128,0.12); color: var(--green);  border: 1px solid rgba(74,222,128,0.3); }
+.flash-already_running { background: rgba(96,165,250,0.12); color: var(--blue); border: 1px solid rgba(96,165,250,0.3); }
+
 /* Projects list */
 .projects-list { margin-bottom: 2rem; }

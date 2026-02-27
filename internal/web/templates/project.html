@@ -6,11 +6,11 @@
         <div>
             <a href="/" class="back-link">← Projects</a>
             <h1>{{.Project.Name}}</h1>
-            <span class="project-meta">{{.Project.RepoPath}}</span>
+            {{if .Project.RepoPath}}<span class="project-meta">{{.Project.RepoPath}}</span>{{end}}
         </div>
         <div class="project-controls">
             {{if .IsRunning}}
-                <span class="badge status-running">Running</span>
+                <span class="badge status-running">● Running</span>
                 <form method="POST" action="/projects/{{.Project.ID}}/stop" style="display:inline">
                     <button type="submit" class="btn btn-danger">Stop</button>
                 </form>
@@ -21,6 +21,15 @@
             {{end}}
         </div>
     </div>
+
+    {{if .Msg}}
+    <div class="flash flash-{{.Msg}}">
+        {{if eq .Msg "no_tasks"}}No pending tasks in the backlog. Add a task below, then click Start.
+        {{else if eq .Msg "started"}}Started processing backlog.
+        {{else if eq .Msg "already_running"}}Project is already running.
+        {{end}}
+    </div>
+    {{end}}
 
     <section class="backlog">
         <h2>Backlog</h2>
@@ -33,16 +42,15 @@
                         <a href="/tasks/{{.ID}}" class="task-desc">{{.Description}}</a>
                     </div>
                     <div class="task-controls">
-                        <form method="POST" action="/projects/{{$.Project.ID}}/tasks/{{.ID}}" style="display:inline">
-                            <input type="hidden" name="_method" value="PUT">
+                        <form method="POST" action="/projects/{{$.Project.ID}}/tasks/{{.ID}}/agent" style="display:inline">
                             <select name="agent" onchange="this.form.submit()">
                                 <option value="claude" {{if eq .Agent "claude"}}selected{{end}}>Claude</option>
                                 <option value="codex" {{if eq .Agent "codex"}}selected{{end}}>Codex</option>
                                 <option value="" {{if eq .Agent ""}}selected{{end}}>Default</option>
                             </select>
                         </form>
-                        <form method="POST" action="/projects/{{$.Project.ID}}/tasks/{{.ID}}" style="display:inline">
-                            <input type="hidden" name="_method" value="DELETE">
+                        <form method="POST" action="/projects/{{$.Project.ID}}/tasks/{{.ID}}/delete" style="display:inline"
+                              onsubmit="return confirm('Delete this task?')">
                             <button type="submit" class="btn btn-sm btn-danger">✕</button>
                         </form>
                     </div>
@@ -50,7 +58,7 @@
                 {{end}}
             </div>
         {{else}}
-            <p class="empty">No tasks yet.</p>
+            <p class="empty">No tasks yet. Add one below, then click ▶ Start.</p>
         {{end}}
     </section>
 
@@ -80,4 +88,11 @@
         </form>
     </section>
 </div>
+
+{{if .IsRunning}}
+<script>
+// Auto-refresh every 3s while a project is running so task statuses update.
+setTimeout(function() { window.location.reload(); }, 3000);
+</script>
+{{end}}
 {{end}}
