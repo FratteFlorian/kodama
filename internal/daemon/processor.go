@@ -271,7 +271,6 @@ func (d *Daemon) handleQuestion(ctx context.Context, task *db.Task, question str
 	}
 
 	// Update task description to include the Q&A so the next agent run has full context.
-	// Format: original description + "\n\nPrevious Q&A:\nQ: ...\nA: ..."
 	prior, _ := d.db.GetFullLog(task.ID)
 	newPrompt := fmt.Sprintf(
 		"%s\n\nPrevious progress and Q&A (continue from here):\n%s\nThe answer to the question %q is: %s",
@@ -281,8 +280,8 @@ func (d *Daemon) handleQuestion(ctx context.Context, task *db.Task, question str
 		slog.Warn("update task description with Q&A", "err", err)
 	}
 
-	// Resume running status so the outer loop restarts the agent on next iteration.
-	d.db.UpdateTaskStatus(task.ID, db.TaskStatusRunning)
+	// Reset to pending so runProject picks it up again on the next loop iteration.
+	d.db.UpdateTaskStatus(task.ID, db.TaskStatusPending)
 
 	return nil
 }
