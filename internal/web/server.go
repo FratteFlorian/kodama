@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -28,12 +29,12 @@ type DaemonController interface {
 
 // Server is the HTTP server for Kodama's web UI.
 type Server struct {
-	cfg      *config.Config
-	db       *db.DB
-	hub      *Hub
-	daemon   DaemonController
-	router   chi.Router
-	tmpl     *template.Template
+	cfg       *config.Config
+	db        *db.DB
+	hub       *Hub
+	daemon    DaemonController
+	router    chi.Router
+	templates map[string]*template.Template
 }
 
 // New creates and configures a new web Server.
@@ -45,16 +46,22 @@ func New(cfg *config.Config, database *db.DB, hub *Hub, daemon DaemonController)
 		daemon: daemon,
 	}
 
-	// Parse all templates.
 	tmplFS, err := fs.Sub(embedFS, "templates")
 	if err != nil {
 		return nil, fmt.Errorf("template fs: %w", err)
 	}
-	tmpl, err := template.New("").Funcs(templateFuncs()).ParseFS(tmplFS, "*.html")
-	if err != nil {
-		return nil, fmt.Errorf("parse templates: %w", err)
+
+	// Parse each page as its own template set (layout + page).
+	// This prevents {{define "content"}} blocks from conflicting across pages.
+	pages := []string{"index.html", "project.html", "task.html"}
+	s.templates = make(map[string]*template.Template, len(pages))
+	for _, page := range pages {
+		t, err := template.New("").Funcs(templateFuncs()).ParseFS(tmplFS, "layout.html", page)
+		if err != nil {
+			return nil, fmt.Errorf("parse template %s: %w", page, err)
+		}
+		s.templates[page] = t
 	}
-	s.tmpl = tmpl
 
 	s.router = s.buildRouter()
 	return s, nil
@@ -127,9 +134,19 @@ func templateFuncs() template.FuncMap {
 
 // renderTemplate renders a named template with data to the response.
 func (s *Server) renderTemplate(w http.ResponseWriter, name string, data any) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.tmpl.ExecuteTemplate(w, name, data); err != nil {
-		slog.Error("render template", "name", name, "err", err)
-		http.Error(w, "template error", http.StatusInternalServerError)
+	t, ok := s.templates[name]
+	if !ok {
+		http.Error(w, "template not found: "+name, http.StatusInternalServerError)
+		return
 	}
+	// Buffer the render so we can return a proper 500 on error
+	// without writing partial HTML to the client.
+	var buf strings.Builder
+	if err := t.ExecuteTemplate(&buf, "layout.html", data); err != nil {
+		slog.Error("render template", "name", name, "err", err)
+		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(buf.String()))
 }
