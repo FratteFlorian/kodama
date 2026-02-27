@@ -24,6 +24,8 @@ func Open(dataDir string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
+	// SQLite only supports one writer at a time; serialise through one connection.
+	sqlDB.SetMaxOpenConns(1)
 	// Enable foreign key support (must be done per-connection in SQLite).
 	if _, err := sqlDB.Exec("PRAGMA foreign_keys = ON"); err != nil {
 		sqlDB.Close()
