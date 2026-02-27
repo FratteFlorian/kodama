@@ -47,6 +47,11 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	contextFile := kodamaMdPath(proj)
 	if err := ag.Start(proj.RepoPath, prompt, contextFile); err != nil {
 		slog.Error("start agent", "task_id", task.ID, "err", err)
+		errMsg := fmt.Sprintf("[error] failed to start agent %q: %v\nMake sure the binary is installed and ANTHROPIC_API_KEY is set.\n", agentName, err)
+		d.db.AppendTaskLog(task.ID, errMsg)
+		if d.hub != nil {
+			d.hub.Broadcast(task.ID, errMsg)
+		}
 		d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
 		d.sendNotification(fmt.Sprintf("Task #%d failed to start: %s", task.ID, err))
 		return
