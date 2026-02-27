@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os/exec"
+	"strings"
 	"sync"
 )
 
@@ -16,9 +16,6 @@ type ClaudeAgent struct {
 	cmd    *exec.Cmd
 	cancel context.CancelFunc
 	output chan string
-
-	mu    sync.Mutex
-	stdin io.WriteCloser // stdin pipe; prompt is written here, kept open for Q&A
 }
 
 // NewClaudeAgent creates a new ClaudeAgent using the given binary path.
@@ -32,7 +29,8 @@ func NewClaudeAgent(binary string) *ClaudeAgent {
 	}
 }
 
-// Start launches claude with the task, writing the prompt via stdin.
+// Start launches claude with the task as a positional argument.
+// Stdin is set to an empty reader so claude gets immediate EOF and doesn't block.
 func (a *ClaudeAgent) Start(workdir, task, contextFile string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
@@ -43,19 +41,24 @@ func (a *ClaudeAgent) Start(workdir, task, contextFile string) error {
 		prompt = fmt.Sprintf("Please read %s for project context first, then: %s", contextFile, task)
 	}
 
-	// Pass prompt via stdin, not as a positional arg — claude does not use positional args.
-	args := []string{"--print", "--dangerously-skip-permissions"}
+	// Usage: claude [options] [prompt]
+	// --print: non-interactive, print response and exit.
+	// --dangerously-skip-permissions: bypass permission prompts.
+	// Prompt is the final positional argument.
+	args := []string{"--print", "--dangerously-skip-permissions", prompt}
 	cmd := exec.CommandContext(ctx, a.binary, args...)
 	if workdir != "" {
 		cmd.Dir = workdir
 	}
+	// Give claude an empty stdin (immediate EOF) so it doesn't block waiting
+	// for more input — an open pipe with no writer causes claude to hang.
+	cmd.Stdin = strings.NewReader("")
 
 	slog.Info("starting claude agent",
 		"binary", a.binary,
 		"workdir", workdir,
 		"context_file", contextFile,
-		"cmd", a.binary+" "+fmt.Sprintf("%v", args),
-		"prompt_len", len(prompt),
+		"args", fmt.Sprintf("--print --dangerously-skip-permissions <prompt(%d chars)>", len(prompt)),
 	)
 
 	stdout, err := cmd.StdoutPipe()
@@ -68,12 +71,6 @@ func (a *ClaudeAgent) Start(workdir, task, contextFile string) error {
 		cancel()
 		return fmt.Errorf("stderr pipe: %w", err)
 	}
-	stdinPipe, err := cmd.StdinPipe()
-	if err != nil {
-		cancel()
-		return fmt.Errorf("stdin pipe: %w", err)
-	}
-	a.stdin = stdinPipe
 
 	if err := cmd.Start(); err != nil {
 		cancel()
@@ -81,15 +78,6 @@ func (a *ClaudeAgent) Start(workdir, task, contextFile string) error {
 	}
 	a.cmd = cmd
 	slog.Info("claude process started", "pid", cmd.Process.Pid)
-
-	// Write the initial prompt to stdin. Do NOT close stdin so we can send
-	// follow-up answers for KODAMA_QUESTION turns.
-	go func() {
-		slog.Info("writing prompt to claude stdin", "pid", cmd.Process.Pid, "prompt_len", len(prompt))
-		if _, err := fmt.Fprintln(stdinPipe, prompt); err != nil {
-			slog.Warn("write prompt to stdin", "pid", cmd.Process.Pid, "err", err)
-		}
-	}()
 
 	// Stream stdout and stderr into output channel.
 	var wg sync.WaitGroup
@@ -124,15 +112,10 @@ func (a *ClaudeAgent) Start(workdir, task, contextFile string) error {
 	return nil
 }
 
-// Write sends input to the agent's stdin (e.g. an answer to a KODAMA_QUESTION).
+// Write is not supported in --print mode (single-shot, no multi-turn).
+// KODAMA_QUESTION answers would require restarting the process with conversation history.
 func (a *ClaudeAgent) Write(input string) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.stdin == nil {
-		return fmt.Errorf("agent not started")
-	}
-	_, err := fmt.Fprintln(a.stdin, input)
-	return err
+	return fmt.Errorf("Write not supported in --print mode")
 }
 
 // Output returns the channel streaming agent output lines.
@@ -147,11 +130,6 @@ func (a *ClaudeAgent) Detect(line string) (Signal, string) {
 
 // Stop terminates the claude process.
 func (a *ClaudeAgent) Stop() error {
-	a.mu.Lock()
-	if a.stdin != nil {
-		a.stdin.Close()
-	}
-	a.mu.Unlock()
 	if a.cancel != nil {
 		a.cancel()
 	}
