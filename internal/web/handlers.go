@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
@@ -39,13 +42,15 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.FormValue("name")
-	repoPath := r.FormValue("repo_path")
+	repoPath := expandPath(r.FormValue("repo_path"))
 	dockerImage := r.FormValue("docker_image")
 	agent := r.FormValue("agent")
 	prd := r.FormValue("prd")
 	if agent == "" {
 		agent = "claude"
 	}
+
+	slog.Info("creating project", "name", name, "repo_path", repoPath, "docker_image", dockerImage, "agent", agent)
 
 	proj, err := s.db.CreateProject(name, repoPath, dockerImage, agent, false)
 	if err != nil {
@@ -421,6 +426,19 @@ func (s *Server) apiAnswerQuestion(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	jsonOK(w, map[string]string{"status": "answered"})
+}
+
+// expandPath expands ~ to the home directory in a file path.
+func expandPath(path string) string {
+	if path == "" {
+		return path
+	}
+	if strings.HasPrefix(path, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, path[2:])
+		}
+	}
+	return path
 }
 
 // --- Helpers ---

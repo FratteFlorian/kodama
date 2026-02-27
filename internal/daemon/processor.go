@@ -66,17 +66,19 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	var doneSummary string
 	questionTimeout := d.cfg.QuestionTimeout
 	if questionTimeout == 0 {
-		questionTimeout = 30 * time.Second
+		questionTimeout = 600 * time.Second
 	}
 
 	// Process output.
+	// The timer fires if no output is seen for questionTimeout — used to detect
+	// when the agent is silently waiting for input (e.g. prompting without KODAMA_QUESTION).
 	timer := time.NewTimer(questionTimeout)
 	defer timer.Stop()
 
+	slog.Info("waiting for agent output", "task_id", task.ID, "timeout", questionTimeout)
+
 	done := false
 	for !done {
-		timer.Reset(questionTimeout)
-
 		select {
 		case <-ctx.Done():
 			ag.Stop()
@@ -149,12 +151,21 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 			}
 
 		case <-timer.C:
-			// Output timeout — treat as implicit question.
-			slog.Info("output timeout, treating as implicit question", "task_id", task.ID)
+			// No output for questionTimeout — treat as implicit question (agent may be waiting).
+			slog.Warn("output timeout, treating as implicit question",
+				"task_id", task.ID, "timeout", questionTimeout)
 			if err := d.handleQuestion(ctx, task, "Agent appears to be waiting for input.", ag); err != nil {
 				d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
 				done = true
 			}
+			// Reset timer after handling the question so we don't immediately re-fire.
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(questionTimeout)
 		}
 	}
 

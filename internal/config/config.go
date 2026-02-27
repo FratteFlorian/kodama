@@ -41,7 +41,7 @@ func defaults() Config {
 	return Config{
 		Port:             8080,
 		DataDir:          "./data",
-		QuestionTimeoutS: 30,
+		QuestionTimeoutS: 600, // 10 minutes — claude --print can take 60-120s before producing output
 		Docker: DockerConfig{
 			Socket: "/var/run/docker.sock",
 		},
@@ -110,7 +110,7 @@ func Load() (*Config, error) {
 
 	// Convert seconds to duration.
 	if cfg.QuestionTimeoutS <= 0 {
-		cfg.QuestionTimeoutS = 30
+		cfg.QuestionTimeoutS = 600
 	}
 	cfg.QuestionTimeout = time.Duration(cfg.QuestionTimeoutS) * time.Second
 

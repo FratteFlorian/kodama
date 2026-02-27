@@ -19,7 +19,7 @@ func TestDefaults(t *testing.T) {
 
 	assert.Equal(t, 8080, cfg.Port)
 	assert.Equal(t, "./data", cfg.DataDir)
-	assert.Equal(t, 30*time.Second, cfg.QuestionTimeout)
+	assert.Equal(t, 600*time.Second, cfg.QuestionTimeout)
 	assert.Equal(t, "claude", cfg.Claude.Binary)
 	assert.Equal(t, "/var/run/docker.sock", cfg.Docker.Socket)
 }

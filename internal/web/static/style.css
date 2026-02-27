@@ -153,6 +153,7 @@ main { padding: 2rem 1.5rem; }
 /* Forms */
 .form-group { margin-bottom: 1rem; }
 .form-group label { display: block; font-size: 0.875rem; color: var(--muted); margin-bottom: 0.4rem; }
+.form-hint { display: block; font-size: 0.75rem; color: var(--muted); margin-top: 0.3rem; }
 
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 
