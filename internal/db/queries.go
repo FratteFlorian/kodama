@@ -138,6 +138,11 @@ func (db *DB) UpdateTaskStatus(id int64, status TaskStatus) error {
 	}
 }
 
+func (db *DB) UpdateTaskDescription(id int64, description string) error {
+	_, err := db.sql.Exec(`UPDATE tasks SET description=? WHERE id=?`, description, id)
+	return err
+}
+
 func (db *DB) UpdateTaskAgent(id int64, agent string) error {
 	_, err := db.sql.Exec(`UPDATE tasks SET agent=? WHERE id=?`, agent, id)
 	return err

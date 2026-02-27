@@ -81,7 +81,7 @@ func (a *CodexAgent) Start(workdir, task, contextFile string) error {
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			line := scanner.Text()
-			slog.Debug("codex stdout", "line", line)
+			slog.Info("codex stdout", "pid", cmd.Process.Pid, "line", line)
 			a.output <- line + "\n"
 		}
 	}()
@@ -90,7 +90,7 @@ func (a *CodexAgent) Start(workdir, task, contextFile string) error {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
 			line := scanner.Text()
-			slog.Debug("codex stderr", "line", line)
+			slog.Info("codex stderr", "pid", cmd.Process.Pid, "line", line)
 			a.output <- line + "\n"
 		}
 	}()

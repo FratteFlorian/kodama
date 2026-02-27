@@ -30,7 +30,9 @@
     {{end}}
 
     <section class="task-output">
-        <h2>Output</h2>
+        <h2>Output
+            {{if eq .Task.Status "running"}}<span class="running-indicator" title="Claude is processing — output appears when done">⏳ working…</span>{{end}}
+        </h2>
         <div id="output-container" class="output-box">
             <pre id="output">{{.Log}}</pre>
         </div>

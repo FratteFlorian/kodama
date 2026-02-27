@@ -99,6 +99,15 @@ main { padding: 2rem 1.5rem; }
 }
 
 .status-running, .badge.status-running { background: rgba(96, 165, 250, 0.15); color: var(--blue); }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.running-indicator {
+    font-size: 0.8rem;
+    color: var(--blue);
+    font-weight: normal;
+    margin-left: 0.75rem;
+    animation: pulse 1.5s ease-in-out infinite;
+}
 .status-waiting { background: rgba(251, 191, 36, 0.15); color: var(--yellow); }
 .status-done { background: rgba(74, 222, 128, 0.15); color: var(--green); }
 .status-failed { background: rgba(248, 113, 113, 0.15); color: var(--red); }

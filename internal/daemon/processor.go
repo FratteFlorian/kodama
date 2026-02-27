@@ -49,6 +49,15 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	entry := agentEntry{ag: ag, name: agentName}
 
 	contextFile := kodamaMdPath(proj)
+
+	// Write an initial "started" message to the DB log so the task page
+	// isn't blank while claude is running (--print produces no output until done).
+	startMsg := fmt.Sprintf("[agent %s started at %s — waiting for output...]\n", agentName, time.Now().Format("15:04:05"))
+	d.db.AppendTaskLog(task.ID, startMsg)
+	if d.hub != nil {
+		d.hub.Broadcast(task.ID, startMsg)
+	}
+
 	if err := ag.Start(proj.RepoPath, prompt, contextFile); err != nil {
 		slog.Error("start agent", "task_id", task.ID, "err", err)
 		errMsg := fmt.Sprintf("[error] failed to start agent %q: %v\nMake sure the binary is installed and ANTHROPIC_API_KEY is set.\n", agentName, err)
@@ -68,6 +77,30 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	if questionTimeout == 0 {
 		questionTimeout = 600 * time.Second
 	}
+
+	// Heartbeat goroutine: broadcasts elapsed time every 30s via WebSocket while
+	// claude runs. NOT stored in DB — only visible on the live task page.
+	// Stops when heartbeatDone is closed.
+	heartbeatDone := make(chan struct{})
+	defer close(heartbeatDone)
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		agentStart := time.Now()
+		for {
+			select {
+			case <-heartbeatDone:
+				return
+			case <-ticker.C:
+				elapsed := time.Since(agentStart).Round(time.Second)
+				msg := fmt.Sprintf("[still running... %s elapsed]\n", elapsed)
+				if d.hub != nil {
+					d.hub.Broadcast(task.ID, msg)
+				}
+				slog.Info("agent heartbeat", "task_id", task.ID, "elapsed", elapsed)
+			}
+		}
+	}()
 
 	// Process output.
 	// The timer fires if no output is seen for questionTimeout — used to detect
@@ -120,6 +153,12 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 					slog.Error("handle question failed", "task_id", task.ID, "err", err)
 					d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
 					done = true
+				} else {
+					// Agent was stopped by handleQuestion; drain remaining output then
+					// return so runProject re-runs the task with updated description.
+					for range ag.Output() {
+					}
+					return
 				}
 
 			case agent.SignalDone:
@@ -182,10 +221,18 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	}
 }
 
-// handleQuestion handles a KODAMA_QUESTION signal by notifying and waiting for answer.
+// handleQuestion handles a KODAMA_QUESTION signal by notifying the user and waiting
+// for an answer. Because --print mode is single-shot (no stdin pipe back to the
+// agent), answering does NOT write to stdin. Instead the caller is expected to
+// restart the agent with the conversation history + answer prepended to the prompt.
+// This function just blocks until an answer arrives and returns it via the err
+// return — callers embed the answer into the next agent invocation.
 func (d *Daemon) handleQuestion(ctx context.Context, task *db.Task, question string, ag agent.Agent) error {
 	slog.Info("task waiting for input", "task_id", task.ID, "question", question)
 	d.db.UpdateTaskStatus(task.ID, db.TaskStatusWaiting)
+
+	// Stop the current agent — we'll restart it with the answer.
+	ag.Stop()
 
 	// Register a local answer channel (for web UI).
 	localCh := d.registerQuestion(task.ID)
@@ -216,20 +263,26 @@ func (d *Daemon) handleQuestion(ctx context.Context, task *db.Task, question str
 		}
 	}
 
-	// Write answer to agent stdin.
-	if err := ag.Write(answer); err != nil {
-		slog.Error("write answer to agent", "err", err)
-		return err
-	}
-
-	// Resume running status.
-	d.db.UpdateTaskStatus(task.ID, db.TaskStatusRunning)
 	// Log the answer as context.
 	chunk := fmt.Sprintf("[User answered: %s]\n", answer)
 	d.db.AppendTaskLog(task.ID, chunk)
 	if d.hub != nil {
 		d.hub.Broadcast(task.ID, chunk)
 	}
+
+	// Update task description to include the Q&A so the next agent run has full context.
+	// Format: original description + "\n\nPrevious Q&A:\nQ: ...\nA: ..."
+	prior, _ := d.db.GetFullLog(task.ID)
+	newPrompt := fmt.Sprintf(
+		"%s\n\nPrevious progress and Q&A (continue from here):\n%s\nThe answer to the question %q is: %s",
+		task.Description, prior, question, answer,
+	)
+	if err := d.db.UpdateTaskDescription(task.ID, newPrompt); err != nil {
+		slog.Warn("update task description with Q&A", "err", err)
+	}
+
+	// Resume running status so the outer loop restarts the agent on next iteration.
+	d.db.UpdateTaskStatus(task.ID, db.TaskStatusRunning)
 
 	return nil
 }
