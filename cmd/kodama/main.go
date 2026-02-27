@@ -18,6 +18,13 @@ import (
 )
 
 func main() {
+	// Default to DEBUG level; set KODAMA_LOG=INFO to reduce noise.
+	logLevel := slog.LevelDebug
+	if os.Getenv("KODAMA_LOG") == "INFO" {
+		logLevel = slog.LevelInfo
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
+
 	if len(os.Args) > 1 && os.Args[1] == "tui" {
 		runTUI()
 		return
@@ -32,6 +39,15 @@ func runDaemon() {
 		os.Exit(1)
 	}
 
+	slog.Info("config loaded",
+		"port", cfg.Port,
+		"data_dir", cfg.DataDir,
+		"claude_binary", cfg.Claude.Binary,
+		"question_timeout", cfg.QuestionTimeout,
+		"telegram_configured", cfg.Telegram.Token != "",
+		"docker_socket", cfg.Docker.Socket,
+	)
+
 	// Open database.
 	database, err := db.Open(cfg.DataDir)
 	if err != nil {
@@ -39,6 +55,7 @@ func runDaemon() {
 		os.Exit(1)
 	}
 	defer database.Close()
+	slog.Info("database opened", "path", cfg.DataDir+"/kodama.db")
 
 	// Create WebSocket hub.
 	hub := web.NewHub()
@@ -55,8 +72,10 @@ func runDaemon() {
 			d.SetNotifier(bot)
 			d.SetQuestionAnswerer(bot)
 			go bot.Start(context.Background())
-			slog.Info("telegram bot started")
+			slog.Info("telegram bot started", "user_id", cfg.Telegram.UserID)
 		}
+	} else {
+		slog.Info("telegram not configured — notifications will be logged only")
 	}
 
 	// Create and start web server.

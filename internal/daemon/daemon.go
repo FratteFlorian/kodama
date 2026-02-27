@@ -78,8 +78,10 @@ func (d *Daemon) StartProject(ctx context.Context, projectID int64) error {
 	defer d.projectsMu.Unlock()
 
 	if _, running := d.projects[projectID]; running {
+		slog.Warn("project already running", "project_id", projectID)
 		return fmt.Errorf("project %d is already running", projectID)
 	}
+	slog.Info("starting project backlog", "project_id", projectID)
 
 	projCtx, cancel := context.WithCancel(ctx)
 	d.projects[projectID] = cancel
@@ -101,6 +103,7 @@ func (d *Daemon) StopProject(projectID int64) {
 	d.projectsMu.Lock()
 	defer d.projectsMu.Unlock()
 	if cancel, ok := d.projects[projectID]; ok {
+		slog.Info("stopping project", "project_id", projectID)
 		cancel()
 	}
 }
@@ -192,12 +195,15 @@ func (d *Daemon) newAgent(task *db.Task, proj *db.Project) (agent.Agent, string)
 	switch agentName {
 	case "codex":
 		ag = agent.NewCodexAgent("codex")
+		slog.Info("selected agent", "agent", "codex", "task_id", task.ID)
 	default:
 		ag = agent.NewClaudeAgent(d.cfg.Claude.Binary)
+		slog.Info("selected agent", "agent", "claude", "binary", d.cfg.Claude.Binary, "task_id", task.ID)
 	}
 
 	// Wrap in Docker if project has an image configured.
 	if proj.DockerImage != "" {
+		slog.Info("wrapping agent in docker", "image", proj.DockerImage, "repo_path", proj.RepoPath)
 		ag = agent.NewDockerAgent(ag, proj.DockerImage, proj.RepoPath)
 	}
 

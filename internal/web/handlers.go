@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -51,13 +52,18 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	slog.Info("project created", "project_id", proj.ID, "name", name, "repo_path", repoPath, "agent", agent)
 
 	// Initialize project files if repo path is set.
 	if repoPath != "" {
+		slog.Info("initializing project files", "repo_path", repoPath)
 		if err := daemon.InitProject(repoPath, name, prd, dockerImage, agent, false); err != nil {
-			// Non-fatal — log and continue.
-			fmt.Printf("warning: init project files: %v\n", err)
+			slog.Warn("init project files failed", "repo_path", repoPath, "err", err)
+		} else {
+			slog.Info("project files written", "repo_path", repoPath)
 		}
+	} else {
+		slog.Info("no repo_path set — skipping project file init")
 	}
 
 	http.Redirect(w, r, fmt.Sprintf("/projects/%d", proj.ID), http.StatusSeeOther)
@@ -96,10 +102,12 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	agent := r.FormValue("agent")
 	priority, _ := strconv.Atoi(r.FormValue("priority"))
 
-	if _, err := s.db.CreateTask(proj.ID, desc, agent, priority); err != nil {
+	task, err := s.db.CreateTask(proj.ID, desc, agent, priority)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	slog.Info("task created", "task_id", task.ID, "project_id", proj.ID, "agent", agent, "priority", priority)
 	http.Redirect(w, r, fmt.Sprintf("/projects/%d", proj.ID), http.StatusSeeOther)
 }
 
@@ -167,7 +175,9 @@ func (s *Server) handleStartProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.daemon != nil {
+		slog.Info("starting project via web", "project_id", proj.ID, "pending_tasks", len(pending))
 		if err := s.daemon.StartProject(context.Background(), proj.ID); err != nil {
+			slog.Warn("start project failed", "project_id", proj.ID, "err", err)
 			http.Redirect(w, r, fmt.Sprintf("/projects/%d?msg=already_running", proj.ID), http.StatusSeeOther)
 			return
 		}
@@ -235,6 +245,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
+	slog.Debug("websocket connected", "task_id", taskID, "remote", r.RemoteAddr)
 
 	// Send existing log as initial content.
 	logContent, _ := s.db.GetFullLog(taskID)

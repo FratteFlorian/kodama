@@ -13,7 +13,11 @@ import (
 
 // processTask runs a single task to completion.
 func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
-	slog.Info("processing task", "task_id", task.ID, "desc", task.Description)
+	start := time.Now()
+	slog.Info("processing task", "task_id", task.ID, "desc", task.Description, "status", task.Status)
+	defer func() {
+		slog.Info("task finished", "task_id", task.ID, "elapsed", time.Since(start).Round(time.Millisecond))
+	}()
 
 	proj, err := d.db.GetProject(task.ProjectID)
 	if err != nil {
@@ -81,7 +85,8 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 
 		case line, ok := <-ag.Output():
 			if !ok {
-				// Channel closed — agent exited.
+				// Channel closed — agent process exited.
+				slog.Info("agent output channel closed", "task_id", task.ID)
 				done = true
 				break
 			}
@@ -104,10 +109,13 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 
 			// Detect signals.
 			sig, payload := ag.Detect(line)
+			if sig != agent.SignalNone {
+				slog.Info("signal detected", "task_id", task.ID, "signal", sig, "payload", payload)
+			}
 			switch sig {
 			case agent.SignalQuestion:
 				if err := d.handleQuestion(ctx, task, payload, ag); err != nil {
-					// Question handling failed — treat as blocked.
+					slog.Error("handle question failed", "task_id", task.ID, "err", err)
 					d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
 					done = true
 				}
@@ -120,6 +128,7 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 				done = true
 
 			case agent.SignalRateLimited:
+				slog.Warn("rate limit hit", "task_id", task.ID)
 				ag.Stop()
 				d.handleRateLimit(ctx, task, outputBuf.String(), entry)
 				return
@@ -127,13 +136,15 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 			case agent.SignalBlocked:
 				d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
 				d.sendNotification(fmt.Sprintf("Task #%d blocked: %s", task.ID, payload))
-				slog.Info("task blocked", "task_id", task.ID, "reason", payload)
+				slog.Warn("task blocked", "task_id", task.ID, "reason", payload)
 				done = true
 
 			case agent.SignalDecision:
+				slog.Info("decision recorded", "task_id", task.ID, "decision", payload)
 				decisions = append(decisions, payload)
 
 			case agent.SignalPR:
+				slog.Info("PR created", "task_id", task.ID, "url", payload)
 				d.sendNotification(fmt.Sprintf("Task #%d PR: %s", task.ID, payload))
 			}
 

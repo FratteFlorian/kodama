@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"sync"
@@ -49,6 +50,8 @@ func (a *ClaudeAgent) Start(workdir, task, contextFile string) error {
 		cmd.Dir = workdir
 	}
 
+	slog.Info("starting claude agent", "binary", a.binary, "workdir", workdir, "context_file", contextFile)
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
@@ -71,6 +74,7 @@ func (a *ClaudeAgent) Start(workdir, task, contextFile string) error {
 		return fmt.Errorf("start claude: %w", err)
 	}
 	a.cmd = cmd
+	slog.Info("claude process started", "pid", cmd.Process.Pid)
 
 	// Stream stdout and stderr into output channel.
 	var wg sync.WaitGroup
@@ -79,21 +83,26 @@ func (a *ClaudeAgent) Start(workdir, task, contextFile string) error {
 		defer wg.Done()
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
-			a.output <- scanner.Text() + "\n"
+			line := scanner.Text()
+			slog.Debug("claude stdout", "line", line)
+			a.output <- line + "\n"
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			a.output <- scanner.Text() + "\n"
+			line := scanner.Text()
+			slog.Debug("claude stderr", "line", line)
+			a.output <- line + "\n"
 		}
 	}()
 
 	// Close output channel when both streams end.
 	go func() {
 		wg.Wait()
-		cmd.Wait()
+		err := cmd.Wait()
+		slog.Info("claude process exited", "pid", cmd.Process.Pid, "err", err)
 		close(a.output)
 	}()
 

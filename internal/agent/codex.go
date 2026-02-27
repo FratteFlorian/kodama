@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"sync"
 )
@@ -47,6 +48,8 @@ func (a *CodexAgent) Start(workdir, task, contextFile string) error {
 		cmd.Dir = workdir
 	}
 
+	slog.Info("starting codex agent", "binary", a.binary, "workdir", workdir)
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
@@ -69,6 +72,7 @@ func (a *CodexAgent) Start(workdir, task, contextFile string) error {
 		return fmt.Errorf("start codex: %w", err)
 	}
 	a.cmd = cmd
+	slog.Info("codex process started", "pid", cmd.Process.Pid)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -76,20 +80,25 @@ func (a *CodexAgent) Start(workdir, task, contextFile string) error {
 		defer wg.Done()
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
-			a.output <- scanner.Text() + "\n"
+			line := scanner.Text()
+			slog.Debug("codex stdout", "line", line)
+			a.output <- line + "\n"
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			a.output <- scanner.Text() + "\n"
+			line := scanner.Text()
+			slog.Debug("codex stderr", "line", line)
+			a.output <- line + "\n"
 		}
 	}()
 
 	go func() {
 		wg.Wait()
-		cmd.Wait()
+		err := cmd.Wait()
+		slog.Info("codex process exited", "pid", cmd.Process.Pid, "err", err)
 		close(a.output)
 	}()
 
