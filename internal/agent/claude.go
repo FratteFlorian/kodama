@@ -42,10 +42,17 @@ func (a *ClaudeAgent) Start(workdir, task, contextFile string) error {
 	}
 
 	// Usage: claude [options] [prompt]
-	// --print: non-interactive, print response and exit.
+	// --print:                    non-interactive, print response and exit.
 	// --dangerously-skip-permissions: bypass permission prompts.
+	// --output-format stream-json: emit newline-delimited JSON events in real
+	//   time (tool calls appear as they happen, not all at the end).
 	// Prompt is the final positional argument.
-	args := []string{"--print", "--dangerously-skip-permissions", prompt}
+	args := []string{
+		"--print",
+		"--dangerously-skip-permissions",
+		"--output-format", "stream-json",
+		prompt,
+	}
 	cmd := exec.CommandContext(ctx, a.binary, args...)
 	if workdir != "" {
 		cmd.Dir = workdir
@@ -58,7 +65,7 @@ func (a *ClaudeAgent) Start(workdir, task, contextFile string) error {
 		"binary", a.binary,
 		"workdir", workdir,
 		"context_file", contextFile,
-		"args", fmt.Sprintf("--print --dangerously-skip-permissions <prompt(%d chars)>", len(prompt)),
+		"args", fmt.Sprintf("--print --dangerously-skip-permissions --output-format stream-json <prompt(%d chars)>", len(prompt)),
 	)
 
 	stdout, err := cmd.StdoutPipe()
@@ -85,14 +92,23 @@ func (a *ClaudeAgent) Start(workdir, task, contextFile string) error {
 	go func() {
 		defer wg.Done()
 		scanner := bufio.NewScanner(stdout)
+		// Increase buffer: stream-json lines can be large (file contents in tool results).
+		scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 		for scanner.Scan() {
-			line := scanner.Text()
-			slog.Info("claude stdout", "pid", cmd.Process.Pid, "line", line)
-			a.output <- line + "\n"
+			raw := scanner.Text()
+			slog.Info("claude stdout", "pid", cmd.Process.Pid, "line", raw)
+			text := parseStreamLine(raw)
+			if text != "" {
+				a.output <- text
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			slog.Warn("claude stdout scanner error", "pid", cmd.Process.Pid, "err", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
+		// stderr is plain text (not JSON) — pass through directly.
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
 			line := scanner.Text()
