@@ -62,41 +62,28 @@
     </section>
 </div>
 
+<script src="/static/output.js"></script>
 <script>
 (function() {
     const taskID = {{.Task.ID}};
     const status = "{{.Task.Status}}";
     const output = document.getElementById('output');
-    const container = document.getElementById('output-container');
 
-    // Connect WebSocket for live streaming if task is running or waiting.
-    if (status === 'running' || status === 'waiting' || status === 'pending') {
-        const wsURL = 'ws://' + window.location.host + '/ws/tasks/' + taskID;
-        const ws = new WebSocket(wsURL);
+    const live = status === 'running' || status === 'waiting' || status === 'pending';
+    const wsURL = live ? 'ws://' + window.location.host + '/ws/tasks/' + taskID : null;
 
-        ws.onmessage = function(event) {
-            output.textContent += event.data;
-            container.scrollTop = container.scrollHeight;
-        };
+    colorizeOutput(output, wsURL, function() {
+        // Reload on close to show final status badge.
+        setTimeout(function() { window.location.reload(); }, 1000);
+    });
 
-        ws.onclose = function() {
-            // Reload page on close to show final status.
-            setTimeout(function() { window.location.reload(); }, 1000);
-        };
-    }
-
-    // Auto-scroll to bottom.
-    container.scrollTop = container.scrollHeight;
-
-    // Poll for status changes if waiting.
+    // Poll for status changes if waiting for input.
     if (status === 'waiting') {
         setInterval(function() {
             fetch('/api/tasks/' + taskID)
                 .then(function(r) { return r.json(); })
                 .then(function(task) {
-                    if (task.Status !== 'waiting') {
-                        window.location.reload();
-                    }
+                    if (task.Status !== 'waiting') window.location.reload();
                 });
         }, 2000);
     }

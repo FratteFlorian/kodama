@@ -47,29 +47,19 @@
     </section>
 </div>
 
+<script src="/static/output.js"></script>
 <script>
 (function() {
     const envID = {{.Env.ID}};
     const isRunning = {{.IsRunning}};
     const output = document.getElementById('output');
-    const container = document.getElementById('output-container');
-
     const wsURL = 'ws://' + window.location.host + '/ws/environment/' + envID;
-    const ws = new WebSocket(wsURL);
 
-    ws.onmessage = function(event) {
-        output.textContent += event.data;
-        container.scrollTop = container.scrollHeight;
-    };
-
-    ws.onclose = function() {
-        // Reload to show updated status when env stops or starts.
+    colorizeOutput(output, wsURL, function() {
         if (isRunning) {
             setTimeout(function() { window.location.reload(); }, 2000);
         }
-    };
-
-    container.scrollTop = container.scrollHeight;
+    });
 })();
 </script>
 {{end}}

@@ -226,6 +226,21 @@ pre#output {
     line-height: 1.6;
 }
 
+/* Output line colorization */
+pre#output .out-system        { color: var(--muted); font-style: italic; }
+pre#output .out-tool-read     { color: #4a9eff; opacity: 0.65; }
+pre#output .out-tool-write    { color: #f59e0b; opacity: 0.8; }
+pre#output .out-tool-exec     { color: #34d399; opacity: 0.7; }
+pre#output .out-error         { color: var(--red); }
+pre#output .out-done          { color: var(--green); }
+pre#output .out-answer        { color: var(--accent); }
+pre#output .out-signal        { font-weight: 600; }
+pre#output .out-signal-done      { color: var(--green); }
+pre#output .out-signal-decision  { color: var(--accent); }
+pre#output .out-signal-question  { color: var(--yellow); }
+pre#output .out-signal-blocked   { color: var(--red); }
+pre#output .out-signal-pr        { color: var(--green); }
+
 /* Task description */
 .task-description {
     background: var(--surface);
