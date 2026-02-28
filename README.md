@@ -4,6 +4,10 @@ A self-hosted autonomous coding daemon that wraps Claude Code and Codex as subpr
 
 Named after the Japanese forest spirit that quietly works in the background.
 
+## Why Kodama?
+
+I built this to scratch my own itch: a self-hosted daemon that can run coding tasks asynchronously while I do other work. Kodama is the result of that.
+
 ## Quick Start
 
 ```bash
@@ -81,6 +85,27 @@ All agents must emit the protocol lines for reliable status detection. Codex run
 3. Start a chat with your bot and send `/start` once.
 4. Open Kodama → Settings and enter the token + user ID.
 5. Run a task to verify notifications.
+
+## Security Notes
+
+- Kodama is meant to run on a trusted network.
+- If you expose it, use Cloudflare Access or a VPN like Tailscale.
+- The UI has no built-in auth by design.
+
+## Who Is This For?
+
+- Solo developers who want a self-hosted coding daemon.
+- People running a personal stack (homelab, VPS, or local machine).
+
+## Known Limitations
+
+- Single-user, self-hosted workflow.
+- No built-in auth (use network-level controls).
+
+## Contributing
+
+- Issues and PRs are welcome.
+- Keep changes focused and include tests for core logic.
 
 ## Architecture
 
