@@ -27,6 +27,7 @@ func (d *Daemon) handleRateLimit(ctx context.Context, task *db.Task, lastOutput 
 	if err := d.db.UpdateTaskStatus(task.ID, db.TaskStatusRateLimited); err != nil {
 		slog.Error("update task status rate_limited", "task_id", task.ID, "err", err)
 	}
+	d.db.UpdateTaskRetryAfter(task.ID, time.Now().Add(rateLimitDelay))
 
 	msg := fmt.Sprintf("rate limit hit: %s. Will retry in 5h.", task.Description)
 	d.sendNotification(formatTaskMsg(projectName, task.ID, msg))

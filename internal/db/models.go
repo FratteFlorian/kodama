@@ -34,6 +34,7 @@ type Task struct {
 	Agent          string // overrides project default if set
 	Priority       int
 	Failover       bool
+	RetryAfter     *time.Time
 	CreatedAt      time.Time
 	StartedAt      *time.Time
 	CompletedAt    *time.Time

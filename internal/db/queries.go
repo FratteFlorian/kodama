@@ -76,7 +76,7 @@ func (db *DB) CreateTask(projectID int64, description, agent string, priority in
 func (db *DB) GetTask(id int64) (*Task, error) {
 	row := db.sql.QueryRow(
 		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at,
-		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer, failover FROM tasks WHERE id = ?`, id,
+		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer, failover, retry_after FROM tasks WHERE id = ?`, id,
 	)
 	return scanTask(row)
 }
@@ -84,7 +84,7 @@ func (db *DB) GetTask(id int64) (*Task, error) {
 func (db *DB) ListTasks(projectID int64) ([]*Task, error) {
 	rows, err := db.sql.Query(
 		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at,
-		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer, failover
+		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer, failover, retry_after
 		 FROM tasks WHERE project_id = ? ORDER BY priority ASC, created_at ASC`,
 		projectID,
 	)
@@ -106,8 +106,8 @@ func (db *DB) ListTasks(projectID int64) ([]*Task, error) {
 func (db *DB) ListPendingTasks(projectID int64) ([]*Task, error) {
 	rows, err := db.sql.Query(
 		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at,
-		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer, failover
-		 FROM tasks WHERE project_id = ? AND status = 'pending'
+		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer, failover, retry_after
+		 FROM tasks WHERE project_id = ? AND (status = 'pending' OR (status = 'rate_limited' AND retry_after IS NOT NULL AND retry_after <= strftime('%s','now')))
 		 ORDER BY priority ASC, created_at ASC`,
 		projectID,
 	)
@@ -133,10 +133,10 @@ func (db *DB) UpdateTaskStatus(id int64, status TaskStatus) error {
 		_, err := db.sql.Exec(`UPDATE tasks SET status=?, started_at=? WHERE id=?`, status, now, id)
 		return err
 	case TaskStatusDone, TaskStatusFailed:
-		_, err := db.sql.Exec(`UPDATE tasks SET status=?, completed_at=? WHERE id=?`, status, now, id)
+		_, err := db.sql.Exec(`UPDATE tasks SET status=?, completed_at=?, retry_after=NULL WHERE id=?`, status, now, id)
 		return err
 	default:
-		_, err := db.sql.Exec(`UPDATE tasks SET status=? WHERE id=?`, status, id)
+		_, err := db.sql.Exec(`UPDATE tasks SET status=?, retry_after=NULL WHERE id=?`, status, id)
 		return err
 	}
 }
@@ -181,6 +181,11 @@ func (db *DB) UpdateTaskPriority(id int64, priority int) error {
 
 func (db *DB) UpdateTaskFailover(id int64, failover bool) error {
 	_, err := db.sql.Exec(`UPDATE tasks SET failover=? WHERE id=?`, boolToInt(failover), id)
+	return err
+}
+
+func (db *DB) UpdateTaskRetryAfter(id int64, t time.Time) error {
+	_, err := db.sql.Exec(`UPDATE tasks SET retry_after=? WHERE id=?`, t.Unix(), id)
 	return err
 }
 
@@ -401,10 +406,11 @@ func scanProject(s scanner) (*Project, error) {
 func scanTask(s scanner) (*Task, error) {
 	var t Task
 	var startedAt, completedAt sql.NullTime
+	var retryAfter sql.NullInt64
 	err := s.Scan(&t.ID, &t.ProjectID, &t.Description, &t.Status, &t.Agent, &t.Priority,
 		&t.CreatedAt, &startedAt, &completedAt,
 		&t.SessionID, &t.CostUSD, &t.InputTokens, &t.OutputTokens,
-		&t.ResumeQuestion, &t.ResumeAnswer, &t.Failover)
+		&t.ResumeQuestion, &t.ResumeAnswer, &t.Failover, &retryAfter)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("task not found")
@@ -416,6 +422,10 @@ func scanTask(s scanner) (*Task, error) {
 	}
 	if completedAt.Valid {
 		t.CompletedAt = &completedAt.Time
+	}
+	if retryAfter.Valid {
+		tt := time.Unix(retryAfter.Int64, 0)
+		t.RetryAfter = &tt
 	}
 	return &t, nil
 }

@@ -233,20 +233,20 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) {
 		return
 	}
 
-	// /start <project_id> -> start backlog processing
-	if text == "/start" {
-		b.reply(msg, "Usage: /start <project_id>")
+	// /work <project_id> -> start backlog processing
+	if text == "/work" {
+		b.reply(msg, "Usage: /work <project_id>")
 		return
 	}
-	if strings.HasPrefix(text, "/start ") {
+	if strings.HasPrefix(text, "/work ") {
 		if b.service == nil {
 			b.reply(msg, "Start is not configured.")
 			return
 		}
-		idStr := strings.TrimSpace(text[len("/start "):])
+		idStr := strings.TrimSpace(text[len("/work "):])
 		projectID, err := strconv.ParseInt(idStr, 10, 64)
 		if err != nil {
-			b.reply(msg, "Usage: /start <project_id>")
+			b.reply(msg, "Usage: /work <project_id>")
 			return
 		}
 		if err := b.service.StartProject(projectID); err != nil {
@@ -258,7 +258,7 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) {
 	}
 
 	if text == "/help" {
-		b.reply(msg, "Commands:\n/projects\n/tasks <project_id>\n/task <project_id> <description>\n/start <project_id>\n/answer <task_id> <answer>")
+		b.reply(msg, "Commands:\n/projects\n/tasks <project_id>\n/task <project_id> <description>\n/work <project_id>\n/answer <task_id> <answer>\n/help")
 		return
 	}
 
@@ -276,7 +276,7 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) {
 	b.mu.Unlock()
 
 	// Default: echo help.
-	b.reply(msg, "Commands:\n/projects\n/tasks <project_id>\n/task <project_id> <description>\n/start <project_id>\n/answer <task_id> <answer>\n/help")
+	b.reply(msg, "Commands:\n/projects\n/tasks <project_id>\n/task <project_id> <description>\n/work <project_id>\n/answer <task_id> <answer>\n/help")
 }
 
 // reply sends a reply message.

@@ -69,10 +69,18 @@ All agents must emit the protocol lines for reliable status detection. Codex run
 /projects
 /tasks <project_id>
 /task <project_id> <description>
-/start <project_id>
+/work <project_id>
 /answer <task_id> <answer>
 /help
 ```
+
+## Telegram Setup
+
+1. Create a bot with @BotFather and copy the token.
+2. Get your user ID by messaging @userinfobot.
+3. Start a chat with your bot and send `/start` once.
+4. Open Kodama → Settings and enter the token + user ID.
+5. Run a task to verify notifications.
 
 ## Architecture
 

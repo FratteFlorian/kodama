@@ -2,6 +2,7 @@ package db
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -159,10 +160,28 @@ func TestListPendingTasks(t *testing.T) {
 
 	pending, err := db.ListPendingTasks(p.ID)
 	require.NoError(t, err)
-	// only t1 is pending — t2 is done, t3 is rate_limited
+	// only t1 is pending — t2 is done, t3 is rate_limited (not ready)
 	assert.Len(t, pending, 1)
 	ids := []int64{pending[0].ID}
 	assert.Contains(t, ids, t1.ID)
+}
+
+func TestListPendingTasksIncludesReadyRateLimited(t *testing.T) {
+	db := openTestDB(t)
+
+	p, _ := db.CreateProject("proj", "/repo", "", "claude", false)
+	t1, _ := db.CreateTask(p.ID, "task1", "", 0, false)
+	t2, _ := db.CreateTask(p.ID, "task2", "", 1, false)
+
+	db.UpdateTaskStatus(t2.ID, TaskStatusRateLimited)
+	require.NoError(t, db.UpdateTaskRetryAfter(t2.ID, time.Now().Add(-1*time.Minute)))
+
+	pending, err := db.ListPendingTasks(p.ID)
+	require.NoError(t, err)
+	assert.Len(t, pending, 2)
+	ids := []int64{pending[0].ID, pending[1].ID}
+	assert.Contains(t, ids, t1.ID)
+	assert.Contains(t, ids, t2.ID)
 }
 
 func TestCascadeDelete(t *testing.T) {

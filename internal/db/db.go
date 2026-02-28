@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     agent        TEXT NOT NULL DEFAULT '',
     priority     INTEGER NOT NULL DEFAULT 0,
     failover     INTEGER NOT NULL DEFAULT 0,
+    retry_after  DATETIME,
     created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     started_at   DATETIME,
     completed_at DATETIME
@@ -128,6 +129,7 @@ CREATE INDEX IF NOT EXISTS idx_environment_logs_env_id ON environment_logs(env_i
 		`ALTER TABLE tasks ADD COLUMN resume_question TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE tasks ADD COLUMN resume_answer   TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE tasks ADD COLUMN failover     INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE tasks ADD COLUMN retry_after  DATETIME`,
 	}
 	for _, m := range migrations {
 		db.sql.Exec(m) // ignore error: "duplicate column name" is expected on re-open
