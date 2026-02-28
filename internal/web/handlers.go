@@ -84,6 +84,10 @@ func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	var totalCost float64
+	for _, t := range tasks {
+		totalCost += t.CostUSD
+	}
 	env, _ := s.db.GetEnvironment(proj.ID) // nil if not configured yet
 	s.renderTemplate(w, "project.html", map[string]any{
 		"Project":      proj,
@@ -91,6 +95,7 @@ func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
 		"IsRunning":    s.daemon != nil && s.daemon.IsRunning(proj.ID),
 		"Env":          env,
 		"IsEnvRunning": s.daemon != nil && s.daemon.IsEnvRunning(proj.ID),
+		"TotalCost":    totalCost,
 		"Msg":          r.URL.Query().Get("msg"),
 	})
 }

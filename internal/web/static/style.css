@@ -295,6 +295,25 @@ pre#output {
 
 .meta-value.copyable:hover { color: var(--accent); }
 
+/* Task cost inline */
+.task-cost {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+    flex-shrink: 0;
+    cursor: default;
+}
+
+.total-cost {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: normal;
+    color: var(--muted);
+    text-transform: none;
+    letter-spacing: 0;
+    margin-left: 0.5rem;
+}
+
 /* Dev environment panel */
 .env-status-row {
     display: flex;

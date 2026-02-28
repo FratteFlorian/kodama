@@ -149,6 +149,15 @@ func templateFuncs() template.FuncMap {
 				return "pending"
 			}
 		},
+		"formatTokens": func(n int64) string {
+			if n >= 1_000_000 {
+				return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+			}
+			if n >= 1000 {
+				return fmt.Sprintf("%.1fk", float64(n)/1000)
+			}
+			return fmt.Sprintf("%d", n)
+		},
 		"envStatusBadge": func(status db.EnvironmentStatus) string {
 			switch status {
 			case db.EnvironmentStatusRunning:
