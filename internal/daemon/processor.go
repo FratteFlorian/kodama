@@ -116,11 +116,13 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	slog.Info("waiting for agent output", "task_id", task.ID, "timeout", questionTimeout)
 
 	done := false
+	finalised := false // true when an explicit terminal signal set the task status
 	for !done {
 		select {
 		case <-ctx.Done():
 			ag.Stop()
 			d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
+			finalised = true
 			return
 
 		case line, ok := <-ag.Output():
@@ -171,6 +173,7 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 				d.db.UpdateTaskStatus(task.ID, db.TaskStatusDone)
 				d.sendNotification(fmt.Sprintf("Task #%d done: %s", task.ID, payload))
 				slog.Info("task done", "task_id", task.ID, "summary", payload)
+				finalised = true
 				done = true
 
 			case agent.SignalRateLimited:
@@ -183,6 +186,7 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 				d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
 				d.sendNotification(fmt.Sprintf("Task #%d blocked: %s", task.ID, payload))
 				slog.Warn("task blocked", "task_id", task.ID, "reason", payload)
+				finalised = true
 				done = true
 
 			case agent.SignalDecision:
@@ -211,6 +215,19 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 			}
 			timer.Reset(questionTimeout)
 		}
+	}
+
+	// If the agent exited cleanly without an explicit terminal signal (e.g. no
+	// KODAMA_DONE emitted), mark the task done now rather than leaving it stuck
+	// in "running".
+	if !finalised {
+		slog.Info("agent exited without signal, marking task done", "task_id", task.ID)
+		d.db.UpdateTaskStatus(task.ID, db.TaskStatusDone)
+	}
+
+	// Drain any remaining output so captureMetadata has processed the result
+	// event (which carries session ID, cost, and token counts) before we read them.
+	for range ag.Output() {
 	}
 
 	// Persist session ID and cost/tokens from the completed agent run.

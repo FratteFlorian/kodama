@@ -14,9 +14,15 @@ type streamEvent struct {
 	// For stream_event (--include-partial-messages)
 	Event *streamInnerEvent `json:"event"`
 	// For result
-	Result  string  `json:"result"`
-	IsError bool    `json:"is_error"`
-	CostUSD float64 `json:"cost_usd"`
+	Result  string       `json:"result"`
+	IsError bool         `json:"is_error"`
+	CostUSD float64      `json:"total_cost_usd"`
+	Usage   *streamUsage `json:"usage"`
+}
+
+type streamUsage struct {
+	InputTokens  int64 `json:"input_tokens"`
+	OutputTokens int64 `json:"output_tokens"`
 }
 
 type streamMessage struct {
@@ -104,10 +110,18 @@ func parseStreamLine(line string) string {
 		if ev.IsError {
 			return fmt.Sprintf("[error: %s]\n", ev.Result)
 		}
-		if ev.CostUSD > 0 {
-			return fmt.Sprintf("[completed — cost $%.4f]\n", ev.CostUSD)
+		if ev.Usage != nil && (ev.Usage.InputTokens > 0 || ev.Usage.OutputTokens > 0) {
+			if ev.CostUSD > 0 {
+				return fmt.Sprintf("[completed — %d in / %d out tokens — $%.4f]\n",
+					ev.Usage.InputTokens, ev.Usage.OutputTokens, ev.CostUSD)
+			}
+			return fmt.Sprintf("[completed — %d in / %d out tokens]\n",
+				ev.Usage.InputTokens, ev.Usage.OutputTokens)
 		}
-		return ""
+		if ev.CostUSD > 0 {
+			return fmt.Sprintf("[completed — $%.4f]\n", ev.CostUSD)
+		}
+		return "[completed]\n"
 
 	case "stream_event":
 		// Only emitted with --include-partial-messages. Extract text deltas.

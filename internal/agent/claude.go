@@ -162,9 +162,9 @@ func (a *ClaudeAgent) Start(workdir, task, contextFile string) error {
 // captureMetadata extracts session_id, cost and token usage from stream-json events.
 func (a *ClaudeAgent) captureMetadata(raw string) {
 	var env struct {
-		SessionID string `json:"session_id"`
-		Type      string `json:"type"`
-		CostUSD   float64 `json:"cost_usd"`
+		SessionID string  `json:"session_id"`
+		Type      string  `json:"type"`
+		CostUSD   float64 `json:"total_cost_usd"`
 		Usage     struct {
 			InputTokens  int64 `json:"input_tokens"`
 			OutputTokens int64 `json:"output_tokens"`
