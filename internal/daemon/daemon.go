@@ -81,7 +81,8 @@ type telegramClient interface {
 }
 
 type telegramService struct {
-	db *db.DB
+	db     *db.DB
+	daemon *Daemon
 }
 
 func (s telegramService) ListProjects() ([]telegram.ProjectInfo, error) {
@@ -121,6 +122,13 @@ func (s telegramService) CreateTask(projectID int64, description string) error {
 	return err
 }
 
+func (s telegramService) StartProject(projectID int64) error {
+	if s.daemon == nil {
+		return fmt.Errorf("daemon not configured")
+	}
+	return s.daemon.StartProject(context.Background(), projectID)
+}
+
 // SetNotifier sets the notification backend (Telegram bot).
 func (d *Daemon) SetNotifier(n Notifier) {
 	d.notifier = n
@@ -143,7 +151,7 @@ func (d *Daemon) UpdateTelegramSettings(token string, userID int64) error {
 
 	if d.telegramFactory == nil {
 		d.telegramFactory = func(token string, userID int64) (telegramClient, error) {
-			return telegram.New(token, userID, telegramService{db: d.db})
+			return telegram.New(token, userID, telegramService{db: d.db, daemon: d})
 		}
 	}
 
@@ -234,6 +242,10 @@ func (d *Daemon) IsRunning(projectID int64) bool {
 // runProject processes all pending tasks for a project sequentially.
 func (d *Daemon) runProject(ctx context.Context, projectID int64) {
 	slog.Info("starting project", "project_id", projectID)
+	projectName := ""
+	if proj, err := d.db.GetProject(projectID); err == nil && proj != nil {
+		projectName = proj.Name
+	}
 	for {
 		if ctx.Err() != nil {
 			return
@@ -246,6 +258,7 @@ func (d *Daemon) runProject(ctx context.Context, projectID int64) {
 		}
 		if len(tasks) == 0 {
 			slog.Info("no more pending tasks", "project_id", projectID)
+			d.sendNotification(formatTaskMsg(projectName, 0, "all tasks completed"))
 			return
 		}
 

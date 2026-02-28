@@ -89,7 +89,7 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 			d.hub.Broadcast(task.ID, errMsg)
 		}
 		d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
-		d.sendNotification(fmt.Sprintf("Task #%d failed to start: %s", task.ID, err))
+		d.sendNotification(formatTaskMsg(proj.Name, task.ID, fmt.Sprintf("failed to start: %s", err)))
 		return
 	}
 
@@ -189,7 +189,7 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 			case agent.SignalDone:
 				doneSummary = payload
 				d.db.UpdateTaskStatus(task.ID, db.TaskStatusDone)
-				d.sendNotification(fmt.Sprintf("Task #%d done: %s", task.ID, payload))
+				d.sendNotification(formatTaskMsg(proj.Name, task.ID, fmt.Sprintf("done: %s", payload)))
 				slog.Info("task done", "task_id", task.ID, "summary", payload)
 				finalised = true
 				done = true
@@ -202,7 +202,7 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 
 			case agent.SignalBlocked:
 				d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
-				d.sendNotification(fmt.Sprintf("Task #%d blocked: %s", task.ID, payload))
+				d.sendNotification(formatTaskMsg(proj.Name, task.ID, fmt.Sprintf("blocked: %s", payload)))
 				slog.Warn("task blocked", "task_id", task.ID, "reason", payload)
 				finalised = true
 				done = true
@@ -213,7 +213,7 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 
 			case agent.SignalPR:
 				slog.Info("PR created", "task_id", task.ID, "url", payload)
-				d.sendNotification(fmt.Sprintf("Task #%d PR: %s", task.ID, payload))
+				d.sendNotification(formatTaskMsg(proj.Name, task.ID, fmt.Sprintf("PR: %s", payload)))
 			}
 
 		case <-timer.C:
@@ -247,10 +247,21 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 		if err := ag.LastError(); err != nil {
 			slog.Warn("agent exited with error", "task_id", task.ID, "err", err)
 			d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
-			d.sendNotification(fmt.Sprintf("Task #%d failed: %v", task.ID, err))
+			d.sendNotification(formatTaskMsg(proj.Name, task.ID, fmt.Sprintf("failed: %v", err)))
 		} else {
 			slog.Info("agent exited without signal, marking task done", "task_id", task.ID)
 			d.db.UpdateTaskStatus(task.ID, db.TaskStatusDone)
+			if doneSummary != "" {
+				summary := trimNotification(doneSummary, 180)
+				tail := trimNotification(outputTail(outputBuf.String(), 400), 400)
+				if tail != "" {
+					d.sendNotification(formatTaskMsg(proj.Name, task.ID, fmt.Sprintf("done: %s\n\nLast output:\n%s", summary, tail)))
+				} else {
+					d.sendNotification(formatTaskMsg(proj.Name, task.ID, fmt.Sprintf("done: %s", summary)))
+				}
+			} else {
+				d.sendNotification(formatTaskMsg(proj.Name, task.ID, "done"))
+			}
 		}
 	}
 
@@ -319,7 +330,11 @@ func (d *Daemon) handleQuestion(ctx context.Context, task *db.Task, question str
 		}
 	}
 
-	d.sendNotification(fmt.Sprintf("Task #%d waiting: %s", task.ID, question))
+	projectName := ""
+	if proj, err := d.db.GetProject(task.ProjectID); err == nil && proj != nil {
+		projectName = proj.Name
+	}
+	d.sendNotification(formatTaskMsg(projectName, task.ID, fmt.Sprintf("waiting: %s", question)))
 
 	// Wait for an answer from either source.
 	var answer string
@@ -372,4 +387,21 @@ func hasRateLimitSignal(output string) bool {
 		}
 	}
 	return false
+}
+
+func trimNotification(s string, max int) string {
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	if max <= 3 {
+		return s[:max]
+	}
+	return s[:max-3] + "..."
+}
+
+func outputTail(s string, max int) string {
+	if max <= 0 || len(s) <= max {
+		return strings.TrimSpace(s)
+	}
+	return strings.TrimSpace(s[len(s)-max:])
 }

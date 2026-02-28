@@ -28,6 +28,7 @@ type TaskService interface {
 	ListProjects() ([]ProjectInfo, error)
 	ListTasks(projectID int64) ([]TaskInfo, error)
 	CreateTask(projectID int64, description string) error
+	StartProject(projectID int64) error
 }
 
 // ProjectInfo is a minimal project representation for Telegram.
@@ -232,8 +233,32 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) {
 		return
 	}
 
+	// /start <project_id> -> start backlog processing
+	if text == "/start" {
+		b.reply(msg, "Usage: /start <project_id>")
+		return
+	}
+	if strings.HasPrefix(text, "/start ") {
+		if b.service == nil {
+			b.reply(msg, "Start is not configured.")
+			return
+		}
+		idStr := strings.TrimSpace(text[len("/start "):])
+		projectID, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			b.reply(msg, "Usage: /start <project_id>")
+			return
+		}
+		if err := b.service.StartProject(projectID); err != nil {
+			b.reply(msg, "Failed to start project.")
+			return
+		}
+		b.reply(msg, fmt.Sprintf("Started project %d", projectID))
+		return
+	}
+
 	if text == "/help" {
-		b.reply(msg, "Commands:\n/projects\n/tasks <project_id>\n/task <project_id> <description>\n/answer <task_id> <answer>")
+		b.reply(msg, "Commands:\n/projects\n/tasks <project_id>\n/task <project_id> <description>\n/start <project_id>\n/answer <task_id> <answer>")
 		return
 	}
 
@@ -251,7 +276,7 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) {
 	b.mu.Unlock()
 
 	// Default: echo help.
-	b.reply(msg, "Kodama bot active. Use /answer <task_id> <answer> to reply to a waiting task.")
+	b.reply(msg, "Commands:\n/projects\n/tasks <project_id>\n/task <project_id> <description>\n/start <project_id>\n/answer <task_id> <answer>\n/help")
 }
 
 // reply sends a reply message.

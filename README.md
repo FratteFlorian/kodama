@@ -69,6 +69,7 @@ All agents must emit the protocol lines for reliable status detection. Codex run
 /projects
 /tasks <project_id>
 /task <project_id> <description>
+/start <project_id>
 /answer <task_id> <answer>
 /help
 ```
