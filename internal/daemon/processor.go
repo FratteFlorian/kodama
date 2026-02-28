@@ -239,6 +239,11 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	// KODAMA_DONE emitted), mark the task done now rather than leaving it stuck
 	// in "running".
 	if !finalised {
+		if hasRateLimitSignal(outputBuf.String()) {
+			slog.Warn("rate limit detected after exit", "task_id", task.ID)
+			d.handleRateLimit(ctx, task, outputBuf.String(), entry)
+			return
+		}
 		if err := ag.LastError(); err != nil {
 			slog.Warn("agent exited with error", "task_id", task.ID, "err", err)
 			d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
@@ -347,4 +352,24 @@ func (d *Daemon) handleQuestion(ctx context.Context, task *db.Task, question str
 	// Reset to pending so runProject picks it up on the next loop iteration.
 	d.db.UpdateTaskStatus(task.ID, db.TaskStatusPending)
 	return nil
+}
+
+func hasRateLimitSignal(output string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		if sig, _ := agent.ParseSignal(line); sig == agent.SignalRateLimited {
+			return true
+		}
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "rate limit") ||
+			strings.Contains(lower, "usage limit") ||
+			strings.Contains(lower, "hit your limit") ||
+			strings.Contains(lower, "limit reached") ||
+			strings.Contains(lower, "too many requests") {
+			return true
+		}
+		if strings.Contains(lower, "resets ") && strings.Contains(lower, "limit") {
+			return true
+		}
+	}
+	return false
 }

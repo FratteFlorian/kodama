@@ -1,7 +1,6 @@
 name: Kodama
 repo: github.com/florian/kodama
 image: ""          # runs directly on host (Go is installed)
-agent: claude       # default agent
-failover: false     # YOLO failover disabled for own development
+agent: codex        # default agent
 telegram:
   notify: true

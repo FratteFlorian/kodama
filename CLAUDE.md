@@ -140,8 +140,7 @@ Each task in the backlog has an agent selector, defaulting to the project-level 
 
 ```yaml
 name: My Project
-agent: claude           # project-level default
-failover: true          # enable YOLO failover
+agent: codex           # project-level default
 image: golang:1.22
 ```
 
@@ -159,7 +158,7 @@ Suggested defaults by task type:
 
 ### YOLO Failover
 
-When `failover: true` is set in `kodama.yml`:
+When a task has failover enabled in the UI:
 
 1. Primary agent hits rate limit mid-task
 2. Kodama switches to the other agent immediately (no waiting)
@@ -167,9 +166,9 @@ When `failover: true` is set in `kodama.yml`:
 4. Checklist state from the previous agent is prepended as resume context
 5. Execution continues — the human reviews the PR and catches any inconsistencies
 
-Failover is opt-in per project. When disabled, Kodama waits for the rate limit reset as usual.
+Failover is opt-in per task. When disabled, Kodama waits for the rate limit reset as usual.
 
-Failover never switches mid-task by default — but with `failover: true` (YOLO mode) it does. This is intentional: the user owns the risk and reviews the PR anyway.
+Failover never switches mid-task by default — but with failover enabled (YOLO mode) it does. This is intentional: the user owns the risk and reviews the PR anyway.
 
 ## kodama.md — Project Memory File
 

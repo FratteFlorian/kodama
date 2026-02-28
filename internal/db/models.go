@@ -33,6 +33,7 @@ type Task struct {
 	Status         TaskStatus
 	Agent          string // overrides project default if set
 	Priority       int
+	Failover       bool
 	CreatedAt      time.Time
 	StartedAt      *time.Time
 	CompletedAt    *time.Time

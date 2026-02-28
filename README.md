@@ -18,7 +18,7 @@ Open http://localhost:8080 to access the web UI.
 - **Web UI**: Project/backlog management, live task output streaming via WebSocket
 - **Telegram**: Notifications when Claude Code has questions; reply to answer
 - **Rate limit handling**: Detects rate limits, saves checkpoint, retries after 5h
-- **YOLO failover**: Optionally switch agent (Claude→Codex) on rate limit
+- **YOLO failover**: Optional per-task switch (Claude→Codex) on rate limit
 - **Docker environments**: Run agents inside project-specific containers
 - **Multi-agent**: Per-task agent selection (Claude Code or Codex)
 
@@ -62,8 +62,7 @@ Each managed project has a `kodama.yml` in its repo root:
 name: My Project
 repo: github.com/user/myproject
 image: golang:1.22      # Docker image (optional)
-agent: claude           # default: claude
-failover: false         # YOLO mode: switch agent on rate limit
+agent: codex            # default: codex
 ```
 
 ## Communication Protocol

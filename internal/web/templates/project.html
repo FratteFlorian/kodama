@@ -111,6 +111,17 @@
                                 <option value="" {{if eq .Agent ""}}selected{{end}}>Default</option>
                             </select>
                         </form>
+                        <form method="POST" action="/projects/{{$.Project.ID}}/tasks/{{.ID}}/failover" style="display:inline">
+                            <label class="inline-checkbox" title="Allow YOLO failover on rate limit">
+                                <input type="checkbox" name="failover" onchange="this.form.submit()" {{if .Failover}}checked{{end}}>
+                                <span>Failover</span>
+                            </label>
+                        </form>
+                        {{if eq .Status "failed"}}
+                        <form method="POST" action="/projects/{{$.Project.ID}}/tasks/{{.ID}}/retry" style="display:inline">
+                            <button type="submit" class="btn btn-sm">Retry</button>
+                        </form>
+                        {{end}}
                         <form method="POST" action="/projects/{{$.Project.ID}}/tasks/{{.ID}}/delete" style="display:inline"
                               onsubmit="return confirm('Delete this task?')">
                             <button type="submit" class="btn btn-sm btn-danger">✕</button>
@@ -167,6 +178,13 @@
                 <div class="form-group">
                     <label for="priority">Priority</label>
                     <input type="number" id="priority" name="priority" value="0" min="0">
+                </div>
+                <div class="form-group">
+                    <label>Failover</label>
+                    <label class="inline-checkbox">
+                        <input type="checkbox" name="failover">
+                        <span>Enable YOLO failover</span>
+                    </label>
                 </div>
             </div>
             <button type="submit" class="btn btn-primary">Add Task</button>

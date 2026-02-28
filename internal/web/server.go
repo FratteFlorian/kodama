@@ -10,10 +10,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/florian/kodama/internal/config"
 	"github.com/florian/kodama/internal/db"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 //go:embed templates/* static/*
@@ -97,7 +97,9 @@ func (s *Server) buildRouter() chi.Router {
 	// HTML forms can only GET/POST, so expose dedicated POST routes for update/delete.
 	r.Post("/projects/{id}/tasks/{tid}/delete", s.handleDeleteTask)
 	r.Post("/projects/{id}/tasks/{tid}/agent", s.handleUpdateTaskAgent)
-		// Keep REST routes for the JSON API.
+	r.Post("/projects/{id}/tasks/{tid}/failover", s.handleUpdateTaskFailover)
+	r.Post("/projects/{id}/tasks/{tid}/retry", s.handleRetryTask)
+	// Keep REST routes for the JSON API.
 	r.Put("/projects/{id}/tasks/{tid}", s.handleUpdateTask)
 	r.Delete("/projects/{id}/tasks/{tid}", s.handleDeleteTask)
 	r.Post("/projects/{id}/settings", s.handleUpdateProjectSettings)
@@ -115,7 +117,7 @@ func (s *Server) buildRouter() chi.Router {
 	r.Post("/projects/{id}/environment/restart", s.handleEnvironmentRestart)
 	r.Get("/ws/environment/{id}", s.handleEnvironmentWebSocket)
 
-		// JSON API.
+	// JSON API.
 	r.Get("/api/projects", s.apiListProjects)
 	r.Get("/api/projects/{id}", s.apiGetProject)
 	r.Post("/api/projects", s.apiCreateProject)

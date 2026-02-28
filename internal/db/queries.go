@@ -61,10 +61,10 @@ func (db *DB) DeleteProject(id int64) error {
 
 // --- Tasks ---
 
-func (db *DB) CreateTask(projectID int64, description, agent string, priority int) (*Task, error) {
+func (db *DB) CreateTask(projectID int64, description, agent string, priority int, failover bool) (*Task, error) {
 	res, err := db.sql.Exec(
-		`INSERT INTO tasks (project_id, description, agent, priority) VALUES (?, ?, ?, ?)`,
-		projectID, description, agent, priority,
+		`INSERT INTO tasks (project_id, description, agent, priority, failover) VALUES (?, ?, ?, ?, ?)`,
+		projectID, description, agent, priority, boolToInt(failover),
 	)
 	if err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ func (db *DB) CreateTask(projectID int64, description, agent string, priority in
 func (db *DB) GetTask(id int64) (*Task, error) {
 	row := db.sql.QueryRow(
 		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at,
-		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer FROM tasks WHERE id = ?`, id,
+		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer, failover FROM tasks WHERE id = ?`, id,
 	)
 	return scanTask(row)
 }
@@ -84,7 +84,7 @@ func (db *DB) GetTask(id int64) (*Task, error) {
 func (db *DB) ListTasks(projectID int64) ([]*Task, error) {
 	rows, err := db.sql.Query(
 		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at,
-		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer
+		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer, failover
 		 FROM tasks WHERE project_id = ? ORDER BY priority ASC, created_at ASC`,
 		projectID,
 	)
@@ -106,7 +106,7 @@ func (db *DB) ListTasks(projectID int64) ([]*Task, error) {
 func (db *DB) ListPendingTasks(projectID int64) ([]*Task, error) {
 	rows, err := db.sql.Query(
 		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at,
-		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer
+		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer, failover
 		 FROM tasks WHERE project_id = ? AND status IN ('pending', 'rate_limited')
 		 ORDER BY priority ASC, created_at ASC`,
 		projectID,
@@ -179,9 +179,23 @@ func (db *DB) UpdateTaskPriority(id int64, priority int) error {
 	return err
 }
 
+func (db *DB) UpdateTaskFailover(id int64, failover bool) error {
+	_, err := db.sql.Exec(`UPDATE tasks SET failover=? WHERE id=?`, boolToInt(failover), id)
+	return err
+}
+
 func (db *DB) DeleteTask(id int64) error {
 	_, err := db.sql.Exec(`DELETE FROM tasks WHERE id = ?`, id)
 	return err
+}
+
+func (db *DB) NextTaskPriority(projectID int64) (int, error) {
+	row := db.sql.QueryRow(`SELECT COALESCE(MAX(priority), 0) FROM tasks WHERE project_id = ?`, projectID)
+	var max int
+	if err := row.Scan(&max); err != nil {
+		return 0, err
+	}
+	return max + 1, nil
 }
 
 // --- Task Logs ---
@@ -364,7 +378,7 @@ func scanTask(s scanner) (*Task, error) {
 	err := s.Scan(&t.ID, &t.ProjectID, &t.Description, &t.Status, &t.Agent, &t.Priority,
 		&t.CreatedAt, &startedAt, &completedAt,
 		&t.SessionID, &t.CostUSD, &t.InputTokens, &t.OutputTokens,
-		&t.ResumeQuestion, &t.ResumeAnswer)
+		&t.ResumeQuestion, &t.ResumeAnswer, &t.Failover)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("task not found")

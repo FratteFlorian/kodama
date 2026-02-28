@@ -190,7 +190,7 @@ func (d *Daemon) newAgent(task *db.Task, proj *db.Project) (agent.Agent, string)
 		agentName = proj.Agent
 	}
 	if agentName == "" {
-		agentName = "claude"
+		agentName = "codex"
 	}
 
 	var ag agent.Agent

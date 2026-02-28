@@ -72,7 +72,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	agent := r.FormValue("agent")
 	prd := r.FormValue("prd")
 	if agent == "" {
-		agent = "claude"
+		agent = "codex"
 	}
 
 	slog.Info("creating project", "name", name, "repo_path", repoPath, "agent", agent)
@@ -87,7 +87,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	// Initialize project files if repo path is set.
 	if repoPath != "" {
 		slog.Info("initializing project files", "repo_path", repoPath)
-		if err := daemon.InitProject(repoPath, name, prd, "", agent, false); err != nil {
+		if err := daemon.InitProject(repoPath, name, prd, "", agent); err != nil {
 			slog.Warn("init project files failed", "repo_path", repoPath, "err", err)
 		} else {
 			slog.Info("project files written", "repo_path", repoPath)
@@ -162,8 +162,9 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	desc := r.FormValue("description")
 	agent := r.FormValue("agent")
 	priority, _ := strconv.Atoi(r.FormValue("priority"))
+	failover := r.FormValue("failover") == "on"
 
-	task, err := s.db.CreateTask(proj.ID, desc, agent, priority)
+	task, err := s.db.CreateTask(proj.ID, desc, agent, priority, failover)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -209,6 +210,23 @@ func (s *Server) handleUpdateTaskAgent(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/projects/%d", proj.ID), http.StatusSeeOther)
 }
 
+// handleUpdateTaskFailover is a POST-only route for HTML form failover changes.
+func (s *Server) handleUpdateTaskFailover(w http.ResponseWriter, r *http.Request) {
+	tid, err := getIDParam(r, "tid")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	failover := r.FormValue("failover") == "on"
+	s.db.UpdateTaskFailover(tid, failover)
+	proj, _ := s.getProject(r)
+	http.Redirect(w, r, fmt.Sprintf("/projects/%d", proj.ID), http.StatusSeeOther)
+}
+
 func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 	tid, err := getIDParam(r, "tid")
 	if err != nil {
@@ -216,6 +234,31 @@ func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.db.DeleteTask(tid)
+	proj, _ := s.getProject(r)
+	http.Redirect(w, r, fmt.Sprintf("/projects/%d", proj.ID), http.StatusSeeOther)
+}
+
+func (s *Server) handleRetryTask(w http.ResponseWriter, r *http.Request) {
+	tid, err := getIDParam(r, "tid")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	task, err := s.db.GetTask(tid)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	nextPriority, err := s.db.NextTaskPriority(task.ProjectID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_, err = s.db.CreateTask(task.ProjectID, task.Description, task.Agent, nextPriority, task.Failover)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	proj, _ := s.getProject(r)
 	http.Redirect(w, r, fmt.Sprintf("/projects/%d", proj.ID), http.StatusSeeOther)
 }
@@ -463,7 +506,7 @@ func (s *Server) apiCreateProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Agent == "" {
-		req.Agent = "claude"
+		req.Agent = "codex"
 	}
 	proj, err := s.db.CreateProject(req.Name, req.RepoPath, req.DockerImage, req.Agent, false)
 	if err != nil {
@@ -498,12 +541,13 @@ func (s *Server) apiCreateTask(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 		Agent       string `json:"agent"`
 		Priority    int    `json:"priority"`
+		Failover    bool   `json:"failover"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	task, err := s.db.CreateTask(proj.ID, req.Description, req.Agent, req.Priority)
+	task, err := s.db.CreateTask(proj.ID, req.Description, req.Agent, req.Priority, req.Failover)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -535,6 +579,7 @@ func (s *Server) apiUpdateTask(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Agent    string `json:"agent"`
 		Priority *int   `json:"priority"`
+		Failover *bool  `json:"failover"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, err.Error(), http.StatusBadRequest)
@@ -545,6 +590,9 @@ func (s *Server) apiUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Priority != nil {
 		s.db.UpdateTaskPriority(taskID, *req.Priority)
+	}
+	if req.Failover != nil {
+		s.db.UpdateTaskFailover(taskID, *req.Failover)
 	}
 	task, _ := s.db.GetTask(taskID)
 	jsonOK(w, task)

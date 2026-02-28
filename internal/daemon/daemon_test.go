@@ -22,7 +22,7 @@ func TestGenerateKodamaMd(t *testing.T) {
 
 func TestInitProject(t *testing.T) {
 	dir := t.TempDir()
-	err := InitProject(dir, "Test Project", "A test project PRD", "golang:1.22", "claude", false)
+	err := InitProject(dir, "Test Project", "A test project PRD", "golang:1.22", "codex")
 	require.NoError(t, err)
 
 	// Check kodama.md was created.
@@ -47,7 +47,7 @@ func TestInitProjectDoesNotOverwriteClaudeMd(t *testing.T) {
 	existing := "# My existing CLAUDE.md\nCustom content here."
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte(existing), 0644))
 
-	err := InitProject(dir, "Test", "PRD", "", "claude", false)
+	err := InitProject(dir, "Test", "PRD", "", "codex")
 	require.NoError(t, err)
 
 	// CLAUDE.md should be unchanged.
@@ -97,7 +97,7 @@ Some other text`
 
 func TestUpdateKodamaMd(t *testing.T) {
 	dir := t.TempDir()
-	err := InitProject(dir, "Test", "PRD", "", "claude", false)
+	err := InitProject(dir, "Test", "PRD", "", "codex")
 	require.NoError(t, err)
 
 	decisions := []string{"Using PostgreSQL", "Using Chi router"}
@@ -136,9 +136,9 @@ func TestInjectEnvContextCompose(t *testing.T) {
 
 func TestInjectEnvContextDockerfile(t *testing.T) {
 	env := &db.Environment{
-		ID:        2,
-		ProjectID: 7,
-		Type:      "dockerfile",
+		ID:         2,
+		ProjectID:  7,
+		Type:       "dockerfile",
 		ConfigPath: "Dockerfile",
 	}
 	result := injectEnvContext("do the task", env)

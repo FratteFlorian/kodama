@@ -35,6 +35,10 @@
                 {{if or .Task.InputTokens .Task.OutputTokens}}{{.Task.InputTokens}} in / {{.Task.OutputTokens}} out{{else}}N/A{{end}}
             </span>
         </div>
+        <div class="meta-chip">
+            <span class="meta-label">failover</span>
+            <span class="meta-value">{{if .Task.Failover}}on{{else}}off{{end}}</span>
+        </div>
     </div>
 
     {{if eq .Task.Status "waiting"}}

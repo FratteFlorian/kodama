@@ -61,7 +61,7 @@ func TestTaskCRUD(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create
-	task, err := db.CreateTask(p.ID, "implement feature X", "", 0)
+	task, err := db.CreateTask(p.ID, "implement feature X", "", 0, false)
 	require.NoError(t, err)
 	assert.Equal(t, TaskStatusPending, task.Status)
 	assert.Equal(t, "implement feature X", task.Description)
@@ -102,7 +102,7 @@ func TestTaskLogs(t *testing.T) {
 	db := openTestDB(t)
 
 	p, _ := db.CreateProject("proj", "/repo", "", "claude", false)
-	task, _ := db.CreateTask(p.ID, "task", "", 0)
+	task, _ := db.CreateTask(p.ID, "task", "", 0, false)
 
 	err := db.AppendTaskLog(task.ID, "line 1\n")
 	require.NoError(t, err)
@@ -122,7 +122,7 @@ func TestCheckpoints(t *testing.T) {
 	db := openTestDB(t)
 
 	p, _ := db.CreateProject("proj", "/repo", "", "claude", false)
-	task, _ := db.CreateTask(p.ID, "task", "", 0)
+	task, _ := db.CreateTask(p.ID, "task", "", 0, false)
 
 	// No checkpoint yet
 	cp, err := db.GetLatestCheckpoint(task.ID)
@@ -150,9 +150,9 @@ func TestListPendingTasks(t *testing.T) {
 	db := openTestDB(t)
 
 	p, _ := db.CreateProject("proj", "/repo", "", "claude", false)
-	t1, _ := db.CreateTask(p.ID, "task1", "", 0)
-	t2, _ := db.CreateTask(p.ID, "task2", "", 1)
-	t3, _ := db.CreateTask(p.ID, "task3", "", 2)
+	t1, _ := db.CreateTask(p.ID, "task1", "", 0, false)
+	t2, _ := db.CreateTask(p.ID, "task2", "", 1, false)
+	t3, _ := db.CreateTask(p.ID, "task3", "", 2, false)
 
 	db.UpdateTaskStatus(t2.ID, TaskStatusDone)
 	db.UpdateTaskStatus(t3.ID, TaskStatusRateLimited)
@@ -170,7 +170,7 @@ func TestCascadeDelete(t *testing.T) {
 	db := openTestDB(t)
 
 	p, _ := db.CreateProject("proj", "/repo", "", "claude", false)
-	task, _ := db.CreateTask(p.ID, "task", "", 0)
+	task, _ := db.CreateTask(p.ID, "task", "", 0, false)
 	db.AppendTaskLog(task.ID, "output")
 	db.SaveCheckpoint(task.ID, "state")
 

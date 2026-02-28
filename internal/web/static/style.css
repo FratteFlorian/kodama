@@ -166,6 +166,8 @@ main { padding: 2rem 1.5rem; }
 .form-group { margin-bottom: 1rem; }
 .form-group label { display: block; font-size: 0.875rem; color: var(--muted); margin-bottom: 0.4rem; }
 .form-hint { display: block; font-size: 0.75rem; color: var(--muted); margin-top: 0.3rem; }
+.inline-checkbox { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8125rem; color: var(--muted); }
+.inline-checkbox input { margin: 0; }
 
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 

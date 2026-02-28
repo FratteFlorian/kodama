@@ -28,21 +28,23 @@ func (d *Daemon) handleRateLimit(ctx context.Context, task *db.Task, lastOutput 
 	d.sendNotification(msg)
 	slog.Info("rate limit hit", "task_id", task.ID)
 
-	// If failover is enabled, switch agent immediately.
-	proj, err := d.db.GetProject(task.ProjectID)
-	if err == nil && proj.Failover {
-		slog.Info("YOLO failover: switching agent", "task_id", task.ID)
-		altAgent := alternateAgent(ag.name, proj)
-		if altAgent != ag.name {
-			d.db.UpdateTaskAgent(task.ID, altAgent)
-			freshTask, err := d.db.GetTask(task.ID)
-			if err != nil {
-				slog.Error("get task for failover", "err", err)
+	// If failover is enabled on the task, switch agent immediately.
+	if task.Failover {
+		proj, err := d.db.GetProject(task.ProjectID)
+		if err == nil {
+			slog.Info("YOLO failover: switching agent", "task_id", task.ID)
+			altAgent := alternateAgent(ag.name, proj)
+			if altAgent != ag.name {
+				d.db.UpdateTaskAgent(task.ID, altAgent)
+				freshTask, err := d.db.GetTask(task.ID)
+				if err != nil {
+					slog.Error("get task for failover", "err", err)
+					return
+				}
+				freshTask.Status = db.TaskStatusRateLimited
+				go d.processTask(ctx, freshTask)
 				return
 			}
-			freshTask.Status = db.TaskStatusRateLimited
-			go d.processTask(ctx, freshTask)
-			return
 		}
 	}
 

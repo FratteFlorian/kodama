@@ -11,6 +11,8 @@ var rateLimitPatterns = []string{
 	"You have exceeded",
 	"too many requests",
 	"Too Many Requests",
+	"hit your limit",
+	"resets",
 }
 
 // ParseSignal checks a line of output for KODAMA_* prefixes and native signals.
