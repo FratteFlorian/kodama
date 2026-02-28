@@ -30,6 +30,7 @@ type DaemonController interface {
 	StopEnvironment(projectID int64) error
 	RestartEnvironment(ctx context.Context, projectID int64) error
 	IsEnvRunning(projectID int64) bool
+	UpdateTelegramSettings(token string, userID int64) error
 }
 
 // Server is the HTTP server for Kodama's web UI.
@@ -60,7 +61,7 @@ func New(cfg *config.Config, database *db.DB, hub *Hub, envHub *Hub, daemon Daem
 
 	// Parse each page as its own template set (layout + page).
 	// This prevents {{define "content"}} blocks from conflicting across pages.
-	pages := []string{"index.html", "project.html", "task.html", "environment.html"}
+	pages := []string{"index.html", "project.html", "task.html", "environment.html", "settings.html"}
 	s.templates = make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		t, err := template.New("").Funcs(templateFuncs()).ParseFS(tmplFS, "layout.html", page)
@@ -84,6 +85,7 @@ func (s *Server) buildRouter() chi.Router {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(s.setupGate)
 
 	// Static assets.
 	staticFS, _ := fs.Sub(embedFS, "static")
@@ -108,6 +110,10 @@ func (s *Server) buildRouter() chi.Router {
 	r.Get("/tasks/{id}", s.handleTask)
 	r.Post("/tasks/{id}/answer", s.handleAnswerQuestion)
 	r.Get("/ws/tasks/{id}", s.handleWebSocket)
+	r.Get("/settings", s.handleSettingsPage)
+	r.Post("/settings", s.handleSettingsSave)
+	r.Get("/setup", s.handleSetupPage)
+	r.Post("/setup", s.handleSettingsSave)
 
 	// Dev environment routes.
 	r.Get("/projects/{id}/environment", s.handleEnvironmentPage)

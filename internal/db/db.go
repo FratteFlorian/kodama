@@ -102,6 +102,13 @@ CREATE TABLE IF NOT EXISTS environment_logs (
     ts      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS settings (
+    id               INTEGER PRIMARY KEY CHECK (id = 1),
+    telegram_token   TEXT NOT NULL DEFAULT '',
+    telegram_user_id INTEGER NOT NULL DEFAULT 0,
+    updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_task_logs_task_id ON task_logs(task_id);

@@ -49,6 +49,26 @@ func sameOrigin(r *http.Request) bool {
 	return false
 }
 
+func (s *Server) setupGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.isSetupComplete() ||
+			strings.HasPrefix(r.URL.Path, "/setup") ||
+			strings.HasPrefix(r.URL.Path, "/static/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		http.Redirect(w, r, "/setup", http.StatusSeeOther)
+	})
+}
+
+func (s *Server) isSetupComplete() bool {
+	settings, err := s.db.GetSettings()
+	if err != nil {
+		return false
+	}
+	return settings != nil
+}
+
 // --- HTML handlers ---
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -471,6 +491,62 @@ func (s *Server) handleEnvironmentWebSocket(w http.ResponseWriter, r *http.Reque
 	}
 
 	s.envHub.Register(envID, conn)
+}
+
+// --- Settings handlers ---
+
+func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
+	settings, _ := s.db.GetSettings()
+	if settings == nil {
+		settings = &db.Settings{}
+	}
+	s.renderTemplate(w, "settings.html", map[string]any{
+		"Settings": settings,
+		"Setup":    false,
+	})
+}
+
+func (s *Server) handleSetupPage(w http.ResponseWriter, r *http.Request) {
+	settings, _ := s.db.GetSettings()
+	if settings == nil {
+		settings = &db.Settings{}
+	}
+	s.renderTemplate(w, "settings.html", map[string]any{
+		"Settings": settings,
+		"Setup":    true,
+	})
+}
+
+func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	token := strings.TrimSpace(r.FormValue("telegram_token"))
+	var userID int64
+	if v := strings.TrimSpace(r.FormValue("telegram_user_id")); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid telegram user id", http.StatusBadRequest)
+			return
+		}
+		userID = id
+	}
+	if err := s.db.UpsertSettings(token, userID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if s.daemon != nil {
+		if err := s.daemon.UpdateTelegramSettings(token, userID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	if strings.HasPrefix(r.URL.Path, "/setup") {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/settings", http.StatusSeeOther)
 }
 
 // --- JSON API handlers ---

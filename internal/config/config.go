@@ -5,42 +5,38 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Config holds all Kodama configuration.
 type Config struct {
-	Port            int            `yaml:"port"`
-	DataDir         string         `yaml:"data_dir"`
-	QuestionTimeout time.Duration  `yaml:"-"`
-	QuestionTimeoutS int           `yaml:"question_timeout"` // seconds, used for YAML parsing
-	Telegram        TelegramConfig `yaml:"telegram"`
-	Docker          DockerConfig   `yaml:"docker"`
-	Claude          ClaudeConfig   `yaml:"claude"`
-}
-
-// TelegramConfig holds Telegram bot settings.
-type TelegramConfig struct {
-	Token  string `yaml:"token"`
-	UserID int64  `yaml:"user_id"`
+	Port             int
+	DataDir          string
+	QuestionTimeout  time.Duration `yaml:"-"`
+	QuestionTimeoutS int
+	Docker           DockerConfig
+	Claude           ClaudeConfig
 }
 
 // DockerConfig holds Docker settings.
 type DockerConfig struct {
-	Socket string `yaml:"socket"`
+	Socket string
 }
 
 // ClaudeConfig holds Claude CLI settings.
 type ClaudeConfig struct {
-	Binary string `yaml:"binary"`
+	Binary string
 }
 
 // defaults returns a Config with all defaults applied.
 func defaults() Config {
+	homeDir, err := os.UserHomeDir()
+	dataDir := "./.kodama"
+	if err == nil && homeDir != "" {
+		dataDir = filepath.Join(homeDir, ".kodama")
+	}
 	return Config{
 		Port:             8080,
-		DataDir:          "./data",
+		DataDir:          dataDir,
 		QuestionTimeoutS: 600, // 10 minutes — claude --print can take 60-120s before producing output
 		Docker: DockerConfig{
 			Socket: "/var/run/docker.sock",
@@ -52,32 +48,9 @@ func defaults() Config {
 }
 
 // Load reads configuration from files and environment variables.
-// File search order: ./kodama-server.yml, ~/.config/kodama/config.yml
-// Environment variables override file values.
+// Environment variables override defaults.
 func Load() (*Config, error) {
 	cfg := defaults()
-
-	// Try config files in order.
-	candidates := []string{
-		"./kodama-server.yml",
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, ".config", "kodama", "config.yml"))
-	}
-
-	for _, path := range candidates {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, err
-		}
-		if err := yaml.Unmarshal(data, &cfg); err != nil {
-			return nil, err
-		}
-		break
-	}
 
 	// Overlay environment variables.
 	if v := os.Getenv("KODAMA_PORT"); v != "" {
@@ -91,14 +64,6 @@ func Load() (*Config, error) {
 	if v := os.Getenv("KODAMA_QUESTION_TIMEOUT"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.QuestionTimeoutS = n
-		}
-	}
-	if v := os.Getenv("KODAMA_TELEGRAM_TOKEN"); v != "" {
-		cfg.Telegram.Token = v
-	}
-	if v := os.Getenv("KODAMA_TELEGRAM_USER_ID"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			cfg.Telegram.UserID = n
 		}
 	}
 	if v := os.Getenv("KODAMA_CLAUDE_BINARY"); v != "" {

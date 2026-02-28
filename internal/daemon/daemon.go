@@ -10,6 +10,7 @@ import (
 	"github.com/florian/kodama/internal/agent"
 	"github.com/florian/kodama/internal/config"
 	"github.com/florian/kodama/internal/db"
+	"github.com/florian/kodama/internal/telegram"
 )
 
 // Broadcaster is the interface used by the daemon to broadcast output chunks.
@@ -50,6 +51,12 @@ type Daemon struct {
 	// Running project goroutines.
 	projects   map[int64]context.CancelFunc
 	projectsMu sync.Mutex
+
+	tgMu     sync.Mutex
+	tgBot    *telegram.Bot
+	tgCancel context.CancelFunc
+	tgToken  string
+	tgUserID int64
 }
 
 // New creates a new Daemon.
@@ -72,6 +79,51 @@ func (d *Daemon) SetNotifier(n Notifier) {
 // SetQuestionAnswerer sets the question answering backend (Telegram bot).
 func (d *Daemon) SetQuestionAnswerer(qa QuestionAnswerer) {
 	d.qa = qa
+}
+
+// UpdateTelegramSettings configures the Telegram bot without restarting the daemon.
+func (d *Daemon) UpdateTelegramSettings(token string, userID int64) error {
+	d.tgMu.Lock()
+	defer d.tgMu.Unlock()
+
+	if token == "" || userID == 0 {
+		if d.tgCancel != nil {
+			d.tgCancel()
+		}
+		d.tgCancel = nil
+		d.tgBot = nil
+		d.tgToken = ""
+		d.tgUserID = 0
+		d.SetNotifier(nil)
+		d.SetQuestionAnswerer(nil)
+		slog.Info("telegram disabled")
+		return nil
+	}
+
+	if d.tgBot != nil && token == d.tgToken && userID == d.tgUserID {
+		return nil
+	}
+
+	if d.tgCancel != nil {
+		d.tgCancel()
+	}
+
+	bot, err := telegram.New(token, userID)
+	if err != nil {
+		return fmt.Errorf("init telegram bot: %w", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	d.tgCancel = cancel
+	d.tgBot = bot
+	d.tgToken = token
+	d.tgUserID = userID
+
+	d.SetNotifier(bot)
+	d.SetQuestionAnswerer(bot)
+	go bot.Start(ctx)
+	slog.Info("telegram bot started", "user_id", userID)
+	return nil
 }
 
 // StartProject begins sequential processing of a project's backlog.

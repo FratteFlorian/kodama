@@ -12,7 +12,6 @@ import (
 	"github.com/florian/kodama/internal/config"
 	"github.com/florian/kodama/internal/daemon"
 	"github.com/florian/kodama/internal/db"
-	"github.com/florian/kodama/internal/telegram"
 	"github.com/florian/kodama/internal/web"
 )
 
@@ -39,7 +38,6 @@ func runDaemon() {
 		"data_dir", cfg.DataDir,
 		"claude_binary", cfg.Claude.Binary,
 		"question_timeout", cfg.QuestionTimeout,
-		"telegram_configured", cfg.Telegram.Token != "",
 		"docker_socket", cfg.Docker.Socket,
 	)
 
@@ -59,19 +57,13 @@ func runDaemon() {
 	// Create daemon.
 	d := daemon.New(cfg, database, hub, envHub)
 
-	// Set up Telegram bot if configured.
-	if cfg.Telegram.Token != "" && cfg.Telegram.UserID != 0 {
-		bot, err := telegram.New(cfg.Telegram.Token, cfg.Telegram.UserID)
-		if err != nil {
-			slog.Warn("telegram bot init failed", "err", err)
-		} else {
-			d.SetNotifier(bot)
-			d.SetQuestionAnswerer(bot)
-			go bot.Start(context.Background())
-			slog.Info("telegram bot started", "user_id", cfg.Telegram.UserID)
+	// Apply Telegram settings from DB (if set).
+	if settings, err := database.GetSettings(); err != nil {
+		slog.Warn("load settings", "err", err)
+	} else if settings != nil {
+		if err := d.UpdateTelegramSettings(settings.TelegramToken, settings.TelegramUserID); err != nil {
+			slog.Warn("apply telegram settings failed", "err", err)
 		}
-	} else {
-		slog.Info("telegram not configured — notifications will be logged only")
 	}
 
 	// Create and start web server.

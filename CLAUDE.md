@@ -270,8 +270,6 @@ services:
       - ./data:/data           # SQLite + project state
       - /var/run/docker.sock:/var/run/docker.sock  # for spawning project containers
     environment:
-      - KODAMA_TELEGRAM_TOKEN=xxx
-      - KODAMA_TELEGRAM_USER_ID=yyy
       - KODAMA_PORT=8080
     restart: unless-stopped
 ```
@@ -300,51 +298,16 @@ kodama/
 
 ## Configuration
 
-Kodama supports both a config file and environment variables. **Environment variables take precedence over the config file.**
-
-### Config File
-
-Kodama looks for a config file in the following order (first found wins):
-1. `./kodama-server.yml` — local directory (useful for development)
-2. `~/.config/kodama/config.yml` — user config directory
-
-All values are optional and fall back to defaults if not set. Secrets (Telegram token etc.) can safely be stored in the config file for personal/homelab use — the file is never part of any project repo.
-
-```yaml
-port: 8080
-data_dir: ./data
-question_timeout: 30        # seconds before detecting CC is waiting
-
-telegram:
-  token: xxx
-  user_id: yyy              # whitelisted Telegram user ID
-
-docker:
-  socket: /var/run/docker.sock
-
-# optional: override claude binary path
-claude:
-  binary: claude            # default: looks for claude in $PATH
-```
+Kodama uses built-in defaults and environment variable overrides. Global Telegram settings are configured in the web UI and stored in the DB (changes apply immediately, no restart).
 
 ### Environment Variables
 
-Environment variables override config file values. Useful for container deployments or CI.
-
 ```
 KODAMA_PORT              # Web UI port (default: 8080)
-KODAMA_DATA_DIR          # SQLite + state directory (default: ./data)
-KODAMA_TELEGRAM_TOKEN    # Telegram bot token
-KODAMA_TELEGRAM_USER_ID  # Whitelisted Telegram user ID (only user who can interact)
-KODAMA_QUESTION_TIMEOUT  # Seconds before detecting CC is waiting (default: 30)
+KODAMA_DATA_DIR          # SQLite + state directory (default: ~/.kodama)
+KODAMA_QUESTION_TIMEOUT  # Seconds before detecting CC is waiting (default: 600)
 KODAMA_CLAUDE_BINARY     # Path to claude binary (default: claude)
 KODAMA_DOCKER_SOCKET     # Docker socket path (default: /var/run/docker.sock)
-```
-
-### Precedence
-
-```
-Environment variables > config file > defaults
 ```
 
 ### Setup Script
@@ -353,7 +316,7 @@ A `setup.sh` script should be provided for clean OS installations. It should:
 1. Install Docker
 2. Install and authenticate the `claude` CLI
 3. Install the `kodama` binary
-4. Interactively generate `~/.config/kodama/config.yml`
+4. Complete initial setup in the web UI (Telegram settings)
 5. Set up Cloudflare Tunnel or Tailscale
 6. Create and enable a systemd service for auto-start
 7. Verify everything is running

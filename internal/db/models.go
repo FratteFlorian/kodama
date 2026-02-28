@@ -83,3 +83,9 @@ type Environment struct {
 	StartedAt  *time.Time
 	StoppedAt  *time.Time
 }
+
+// Settings represents global Kodama settings stored in the DB.
+type Settings struct {
+	TelegramToken  string
+	TelegramUserID int64
+}

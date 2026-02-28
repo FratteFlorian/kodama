@@ -1,0 +1,36 @@
+{{define "title"}}Settings — Kodama{{end}}
+
+{{define "content"}}
+<div class="container">
+    <div class="page-header">
+        <div>
+            <h1>{{if .Setup}}First-time Setup{{else}}Settings{{end}}</h1>
+            {{if .Setup}}
+            <p class="muted">Configure Kodama before you continue.</p>
+            {{end}}
+        </div>
+    </div>
+
+    <section class="project-settings">
+        <h2>Telegram</h2>
+        <form method="POST" action="{{if .Setup}}/setup{{else}}/settings{{end}}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="telegram_token">Bot Token</label>
+                    <input type="password" id="telegram_token" name="telegram_token"
+                           value="{{.Settings.TelegramToken}}"
+                           placeholder="123456:ABC-DEF...">
+                    <small class="form-hint">Leave empty to disable Telegram notifications.</small>
+                </div>
+                <div class="form-group">
+                    <label for="telegram_user_id">User ID</label>
+                    <input type="number" id="telegram_user_id" name="telegram_user_id"
+                           value="{{if .Settings.TelegramUserID}}{{.Settings.TelegramUserID}}{{end}}"
+                           placeholder="12345678">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+    </section>
+</div>
+{{end}}

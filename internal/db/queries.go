@@ -352,6 +352,32 @@ func (db *DB) GetEnvironmentLog(envID int64) (string, error) {
 	return full, rows.Err()
 }
 
+// --- Settings ---
+
+func (db *DB) GetSettings() (*Settings, error) {
+	row := db.sql.QueryRow(`SELECT telegram_token, telegram_user_id FROM settings WHERE id = 1`)
+	var s Settings
+	err := row.Scan(&s.TelegramToken, &s.TelegramUserID)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+func (db *DB) UpsertSettings(telegramToken string, telegramUserID int64) error {
+	_, err := db.sql.Exec(
+		`INSERT INTO settings (id, telegram_token, telegram_user_id, updated_at)
+		 VALUES (1, ?, ?, CURRENT_TIMESTAMP)
+		 ON CONFLICT(id) DO UPDATE SET telegram_token=excluded.telegram_token,
+		 telegram_user_id=excluded.telegram_user_id, updated_at=CURRENT_TIMESTAMP`,
+		telegramToken, telegramUserID,
+	)
+	return err
+}
+
 // --- Helpers ---
 
 type scanner interface {

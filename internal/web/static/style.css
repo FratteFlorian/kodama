@@ -27,6 +27,7 @@ header {
     padding: 0.75rem 1.5rem;
     display: flex;
     align-items: center;
+    justify-content: space-between;
 }
 
 .logo {
@@ -35,6 +36,15 @@ header {
     color: var(--text);
     text-decoration: none;
 }
+
+.top-nav a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.top-nav a:hover { color: var(--text); }
 
 main { padding: 2rem 1.5rem; }
 

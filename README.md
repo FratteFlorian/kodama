@@ -12,6 +12,7 @@ kodama
 ```
 
 Open http://localhost:8080 to access the web UI.
+On first start, complete the setup wizard in the browser.
 
 ## Features
 
@@ -24,32 +25,15 @@ Open http://localhost:8080 to access the web UI.
 
 ## Configuration
 
-Kodama looks for config in `./kodama-server.yml` or `~/.config/kodama/config.yml`.
+Kodama uses built-in defaults (port 8080, data dir `~/.kodama`) and reads overrides from environment variables.
+Telegram configuration is managed in the web UI (Settings).
 
-```yaml
-port: 8080
-data_dir: ./data
-question_timeout: 30     # seconds before detecting agent is waiting
-
-telegram:
-  token: your-bot-token
-  user_id: 12345678       # your Telegram user ID
-
-docker:
-  socket: /var/run/docker.sock
-
-claude:
-  binary: claude           # path to claude binary
-```
-
-All values can be overridden via environment variables:
+Environment variables:
 
 ```
 KODAMA_PORT
 KODAMA_DATA_DIR
 KODAMA_QUESTION_TIMEOUT
-KODAMA_TELEGRAM_TOKEN
-KODAMA_TELEGRAM_USER_ID
 KODAMA_CLAUDE_BINARY
 KODAMA_DOCKER_SOCKET
 ```
@@ -113,8 +97,6 @@ services:
       - ./data:/data
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - KODAMA_TELEGRAM_TOKEN=xxx
-      - KODAMA_TELEGRAM_USER_ID=yyy
       - KODAMA_PORT=8080
     restart: unless-stopped
 ```
