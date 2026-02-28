@@ -26,10 +26,6 @@
             {{end}}
         </div>
         <div class="meta-chip">
-            <span class="meta-label">cost</span>
-            <span class="meta-value">{{if .Task.CostUSD}}${{printf "%.4f" .Task.CostUSD}}{{else}}N/A{{end}}</span>
-        </div>
-        <div class="meta-chip">
             <span class="meta-label">tokens</span>
             <span class="meta-value">
                 {{if or .Task.InputTokens .Task.OutputTokens}}{{.Task.InputTokens}} in / {{.Task.OutputTokens}} out{{else}}N/A{{end}}

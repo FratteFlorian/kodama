@@ -81,11 +81,7 @@
     </section>
 
     <section class="backlog">
-        <h2>Backlog
-            <span class="total-cost">
-                {{if .TotalCost}}${{printf "%.4f" .TotalCost}} total{{else}}N/A{{end}}
-            </span>
-        </h2>
+        <h2>Backlog</h2>
         {{if .Tasks}}
             <div class="task-list">
                 {{range .Tasks}}
@@ -93,10 +89,8 @@
                     <div class="task-info">
                         <span class="task-status badge status-{{statusBadge .Status}}">{{.Status}}</span>
                         <a href="/tasks/{{.ID}}" class="task-desc">{{.Description}}</a>
-                        <span class="task-cost" title="{{if or .InputTokens .OutputTokens}}{{formatTokens .InputTokens}} in / {{formatTokens .OutputTokens}} out{{else}}N/A{{end}}">
-                            {{if .CostUSD}}
-                                ${{printf "%.4f" .CostUSD}}
-                            {{else if or .InputTokens .OutputTokens}}
+                        <span class="task-cost">
+                            {{if or .InputTokens .OutputTokens}}
                                 {{formatTokens .InputTokens}} in / {{formatTokens .OutputTokens}} out
                             {{else}}
                                 N/A

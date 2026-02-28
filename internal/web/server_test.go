@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,22 @@ import (
 )
 
 func newTestServer(t *testing.T) (*Server, *db.DB) {
+	t.Helper()
+	database, err := db.Open(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { database.Close() })
+
+	require.NoError(t, database.UpsertSettings("", 0))
+
+	cfg := &config.Config{Port: 8080}
+	hub := NewHub()
+	envHub := NewHub()
+	srv, err := New(cfg, database, hub, envHub, nil)
+	require.NoError(t, err)
+	return srv, database
+}
+
+func newTestServerNoSetup(t *testing.T) (*Server, *db.DB) {
 	t.Helper()
 	database, err := db.Open(t.TempDir())
 	require.NoError(t, err)
@@ -98,7 +115,7 @@ func TestAPIGetTask(t *testing.T) {
 	srv, database := newTestServer(t)
 
 	proj, _ := database.CreateProject("p", "/tmp", "", "claude", false)
-	task, err := database.CreateTask(proj.ID, "do work", "", 0)
+	task, err := database.CreateTask(proj.ID, "do work", "", 0, false)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tasks/"+itoa(task.ID), nil)
@@ -115,7 +132,7 @@ func TestAPIDeleteTask(t *testing.T) {
 	srv, database := newTestServer(t)
 
 	proj, _ := database.CreateProject("p", "/tmp", "", "claude", false)
-	task, _ := database.CreateTask(proj.ID, "do work", "", 0)
+	task, _ := database.CreateTask(proj.ID, "do work", "", 0, false)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/tasks/"+itoa(task.ID), nil)
 	rec := httptest.NewRecorder()
@@ -157,7 +174,7 @@ func TestTaskPageReturns200(t *testing.T) {
 	srv, database := newTestServer(t)
 
 	proj, _ := database.CreateProject("p", "/tmp", "", "claude", false)
-	task, err := database.CreateTask(proj.ID, "test task", "", 0)
+	task, err := database.CreateTask(proj.ID, "test task", "", 0, false)
 	require.NoError(t, err)
 
 	req := httptest.NewRequest(http.MethodGet, "/tasks/"+itoa(task.ID), nil)
@@ -174,6 +191,84 @@ func TestStaticAssets(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestSetupGateRedirectsWhenMissingSettings(t *testing.T) {
+	srv, _ := newTestServerNoSetup(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, "/setup", rec.Header().Get("Location"))
+}
+
+func TestSetupSaveEnablesApp(t *testing.T) {
+	srv, database := newTestServerNoSetup(t)
+
+	form := url.Values{}
+	form.Set("telegram_token", "")
+	form.Set("telegram_user_id", "")
+	req := httptest.NewRequest(http.MethodPost, "/setup", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, "/", rec.Header().Get("Location"))
+
+	settings, err := database.GetSettings()
+	require.NoError(t, err)
+	require.NotNil(t, settings)
+}
+
+type fakeDaemon struct {
+	token  string
+	userID int64
+}
+
+func (f *fakeDaemon) StartProject(ctx context.Context, projectID int64) error { return nil }
+func (f *fakeDaemon) StopProject(projectID int64)                             {}
+func (f *fakeDaemon) IsRunning(projectID int64) bool                          { return false }
+func (f *fakeDaemon) AnswerQuestion(taskID int64, answer string) error        { return nil }
+func (f *fakeDaemon) StartEnvironment(ctx context.Context, projectID int64) error {
+	return nil
+}
+func (f *fakeDaemon) StopEnvironment(projectID int64) error { return nil }
+func (f *fakeDaemon) RestartEnvironment(ctx context.Context, projectID int64) error {
+	return nil
+}
+func (f *fakeDaemon) IsEnvRunning(projectID int64) bool { return false }
+func (f *fakeDaemon) UpdateTelegramSettings(token string, userID int64) error {
+	f.token = token
+	f.userID = userID
+	return nil
+}
+
+func TestSettingsSaveCallsDaemon(t *testing.T) {
+	database, err := db.Open(t.TempDir())
+	require.NoError(t, err)
+	t.Cleanup(func() { database.Close() })
+	require.NoError(t, database.UpsertSettings("", 0))
+
+	cfg := &config.Config{Port: 8080}
+	hub := NewHub()
+	envHub := NewHub()
+	fd := &fakeDaemon{}
+	srv, err := New(cfg, database, hub, envHub, fd)
+	require.NoError(t, err)
+
+	form := url.Values{}
+	form.Set("telegram_token", "abc")
+	form.Set("telegram_user_id", "42")
+	req := httptest.NewRequest(http.MethodPost, "/settings", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusSeeOther, rec.Code)
+	assert.Equal(t, "abc", fd.token)
+	assert.Equal(t, int64(42), fd.userID)
 }
 
 func TestEnvironmentConfigureAndPage(t *testing.T) {
@@ -220,6 +315,28 @@ func TestEnvironmentPageRedirectsWhenNotConfigured(t *testing.T) {
 	srv.Handler().ServeHTTP(rec, req)
 	// No env configured → redirect to project page.
 	assert.Equal(t, http.StatusSeeOther, rec.Code)
+}
+
+func TestRetryTaskCreatesNewTask(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	proj, _ := database.CreateProject("p", "/tmp", "", "claude", false)
+	failed, _ := database.CreateTask(proj.ID, "do work", "codex", 0, true)
+	database.UpdateTaskStatus(failed.ID, db.TaskStatusFailed)
+
+	form := url.Values{}
+	req := httptest.NewRequest(http.MethodPost, "/projects/"+itoa(proj.ID)+"/tasks/"+itoa(failed.ID)+"/retry", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusSeeOther, rec.Code)
+
+	tasks, err := database.ListTasks(proj.ID)
+	require.NoError(t, err)
+	require.Len(t, tasks, 2)
+	assert.Equal(t, "do work", tasks[1].Description)
+	assert.Equal(t, "codex", tasks[1].Agent)
+	assert.True(t, tasks[1].Failover)
 }
 
 func TestProjectPageShowsEnvironmentPanel(t *testing.T) {

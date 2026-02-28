@@ -256,3 +256,18 @@ func TestEnvironmentCascadeDeleteWithProject(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, got)
 }
+
+func TestSettingsUpsertAndGet(t *testing.T) {
+	db := openTestDB(t)
+
+	settings, err := db.GetSettings()
+	require.NoError(t, err)
+	assert.Nil(t, settings)
+
+	require.NoError(t, db.UpsertSettings("token", 1234))
+	settings, err = db.GetSettings()
+	require.NoError(t, err)
+	require.NotNil(t, settings)
+	assert.Equal(t, "token", settings.TelegramToken)
+	assert.Equal(t, int64(1234), settings.TelegramUserID)
+}
