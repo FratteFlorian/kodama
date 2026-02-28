@@ -30,4 +30,15 @@ type Agent interface {
 
 	// Stop terminates the agent process.
 	Stop() error
+
+	// SessionID returns the agent's session ID if the backend supports sessions
+	// (used to resume a conversation after answering a KODAMA_QUESTION).
+	// Returns "" if sessions are not supported.
+	SessionID() string
+
+	// CostUSD returns the total API cost in USD for the last run, if available.
+	CostUSD() float64
+
+	// TokensUsed returns the input and output token counts for the last run, if available.
+	TokensUsed() (inputTokens, outputTokens int64)
 }

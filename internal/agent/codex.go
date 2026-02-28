@@ -126,6 +126,15 @@ func (a *CodexAgent) Detect(line string) (Signal, string) {
 	return ParseSignal(line)
 }
 
+// SessionID returns "" — codex does not support session resumption.
+func (a *CodexAgent) SessionID() string { return "" }
+
+// CostUSD returns 0 — codex does not report cost.
+func (a *CodexAgent) CostUSD() float64 { return 0 }
+
+// TokensUsed returns 0, 0 — codex does not report token usage.
+func (a *CodexAgent) TokensUsed() (int64, int64) { return 0, 0 }
+
 // Stop terminates the codex process.
 func (a *CodexAgent) Stop() error {
 	if a.cancel != nil {

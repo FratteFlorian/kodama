@@ -16,6 +16,29 @@
         <p>{{.Task.Description}}</p>
     </div>
 
+    {{if or .Task.SessionID .Task.CostUSD}}
+    <div class="task-meta-row">
+        {{if .Task.SessionID}}
+        <div class="meta-chip" title="Click to copy session ID">
+            <span class="meta-label">session</span>
+            <code class="meta-value copyable" onclick="navigator.clipboard.writeText('{{.Task.SessionID}}');this.textContent='copied!';setTimeout(()=>this.textContent='{{.Task.SessionID}}',1500)">{{.Task.SessionID}}</code>
+        </div>
+        {{end}}
+        {{if .Task.CostUSD}}
+        <div class="meta-chip">
+            <span class="meta-label">cost</span>
+            <span class="meta-value">${{printf "%.4f" .Task.CostUSD}}</span>
+        </div>
+        {{end}}
+        {{if .Task.InputTokens}}
+        <div class="meta-chip">
+            <span class="meta-label">tokens</span>
+            <span class="meta-value">{{.Task.InputTokens}} in / {{.Task.OutputTokens}} out</span>
+        </div>
+        {{end}}
+    </div>
+    {{end}}
+
     {{if eq .Task.Status "waiting"}}
     <section class="answer-form">
         <h2>Agent is waiting for input</h2>
