@@ -80,6 +80,47 @@ type telegramClient interface {
 	Start(ctx context.Context)
 }
 
+type telegramService struct {
+	db *db.DB
+}
+
+func (s telegramService) ListProjects() ([]telegram.ProjectInfo, error) {
+	projects, err := s.db.ListProjects()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]telegram.ProjectInfo, 0, len(projects))
+	for _, p := range projects {
+		out = append(out, telegram.ProjectInfo{ID: p.ID, Name: p.Name})
+	}
+	return out, nil
+}
+
+func (s telegramService) ListTasks(projectID int64) ([]telegram.TaskInfo, error) {
+	tasks, err := s.db.ListTasks(projectID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]telegram.TaskInfo, 0, len(tasks))
+	for _, t := range tasks {
+		out = append(out, telegram.TaskInfo{
+			ID:          t.ID,
+			Status:      string(t.Status),
+			Description: t.Description,
+		})
+	}
+	return out, nil
+}
+
+func (s telegramService) CreateTask(projectID int64, description string) error {
+	priority, err := s.db.NextTaskPriority(projectID)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.CreateTask(projectID, description, "", priority, false)
+	return err
+}
+
 // SetNotifier sets the notification backend (Telegram bot).
 func (d *Daemon) SetNotifier(n Notifier) {
 	d.notifier = n
@@ -102,7 +143,7 @@ func (d *Daemon) UpdateTelegramSettings(token string, userID int64) error {
 
 	if d.telegramFactory == nil {
 		d.telegramFactory = func(token string, userID int64) (telegramClient, error) {
-			return telegram.New(token, userID)
+			return telegram.New(token, userID, telegramService{db: d.db})
 		}
 	}
 

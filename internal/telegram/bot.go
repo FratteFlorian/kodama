@@ -19,11 +19,33 @@ type Bot struct {
 	// Pending question channels keyed by task ID.
 	questions map[int64]chan string
 	mu        sync.Mutex
+
+	service TaskService
+}
+
+// TaskService provides project/task operations for Telegram commands.
+type TaskService interface {
+	ListProjects() ([]ProjectInfo, error)
+	ListTasks(projectID int64) ([]TaskInfo, error)
+	CreateTask(projectID int64, description string) error
+}
+
+// ProjectInfo is a minimal project representation for Telegram.
+type ProjectInfo struct {
+	ID   int64
+	Name string
+}
+
+// TaskInfo is a minimal task representation for Telegram.
+type TaskInfo struct {
+	ID          int64
+	Status      string
+	Description string
 }
 
 // New creates and returns a new Bot.
 // token is the Telegram bot token; userID is the single whitelisted user.
-func New(token string, userID int64) (*Bot, error) {
+func New(token string, userID int64, service TaskService) (*Bot, error) {
 	api, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		return nil, fmt.Errorf("create telegram bot: %w", err)
@@ -32,6 +54,7 @@ func New(token string, userID int64) (*Bot, error) {
 		api:       api,
 		userID:    userID,
 		questions: make(map[int64]chan string),
+		service:   service,
 	}, nil
 }
 
@@ -123,6 +146,94 @@ func (b *Bot) handleMessage(msg *tgbotapi.Message) {
 
 		ch <- answer
 		b.reply(msg, fmt.Sprintf("Answer sent to task #%d", taskID))
+		return
+	}
+
+	// /projects -> list projects
+	if text == "/projects" {
+		if b.service == nil {
+			b.reply(msg, "Project listing is not configured.")
+			return
+		}
+		projects, err := b.service.ListProjects()
+		if err != nil {
+			b.reply(msg, "Failed to list projects.")
+			return
+		}
+		if len(projects) == 0 {
+			b.reply(msg, "No projects found.")
+			return
+		}
+		var sb strings.Builder
+		sb.WriteString("Projects:\n")
+		for _, p := range projects {
+			sb.WriteString(fmt.Sprintf("- %d: %s\n", p.ID, p.Name))
+		}
+		b.reply(msg, sb.String())
+		return
+	}
+
+	// /tasks <project_id> -> list tasks
+	if strings.HasPrefix(text, "/tasks ") {
+		if b.service == nil {
+			b.reply(msg, "Task listing is not configured.")
+			return
+		}
+		idStr := strings.TrimSpace(text[len("/tasks "):])
+		projectID, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			b.reply(msg, "Usage: /tasks <project_id>")
+			return
+		}
+		tasks, err := b.service.ListTasks(projectID)
+		if err != nil {
+			b.reply(msg, "Failed to list tasks.")
+			return
+		}
+		if len(tasks) == 0 {
+			b.reply(msg, "No tasks found.")
+			return
+		}
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("Tasks for project %d:\n", projectID))
+		for _, t := range tasks {
+			sb.WriteString(fmt.Sprintf("- #%d [%s] %s\n", t.ID, t.Status, t.Description))
+		}
+		b.reply(msg, sb.String())
+		return
+	}
+
+	// /task <project_id> <description> -> create task
+	if strings.HasPrefix(text, "/task ") {
+		if b.service == nil {
+			b.reply(msg, "Task creation is not configured.")
+			return
+		}
+		parts := strings.SplitN(text[len("/task "):], " ", 2)
+		if len(parts) < 2 {
+			b.reply(msg, "Usage: /task <project_id> <description>")
+			return
+		}
+		projectID, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
+		if err != nil {
+			b.reply(msg, "Invalid project ID")
+			return
+		}
+		desc := strings.TrimSpace(parts[1])
+		if desc == "" {
+			b.reply(msg, "Description cannot be empty")
+			return
+		}
+		if err := b.service.CreateTask(projectID, desc); err != nil {
+			b.reply(msg, "Failed to create task.")
+			return
+		}
+		b.reply(msg, fmt.Sprintf("Task added to project %d", projectID))
+		return
+	}
+
+	if text == "/help" {
+		b.reply(msg, "Commands:\n/projects\n/tasks <project_id>\n/task <project_id> <description>\n/answer <task_id> <answer>")
 		return
 	}
 

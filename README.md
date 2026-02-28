@@ -63,6 +63,16 @@ Agents communicate with Kodama via structured prefixes in stdout:
 
 All agents must emit the protocol lines for reliable status detection. Codex runs in full-auto mode, so any questions will be handled by stopping the run and resuming via injected context (no session resume).
 
+## Telegram Commands
+
+```
+/projects
+/tasks <project_id>
+/task <project_id> <description>
+/answer <task_id> <answer>
+/help
+```
+
 ## Architecture
 
 ```
