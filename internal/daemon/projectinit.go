@@ -63,10 +63,13 @@ func InitProject(repoPath, name, prd, image, agent string, failover bool) error 
 		return fmt.Errorf("create repo dir: %w", err)
 	}
 
-	// Write kodama.md
-	kodamaMd := GenerateKodamaMd(name, prd)
-	if err := os.WriteFile(filepath.Join(repoPath, "kodama.md"), []byte(kodamaMd), 0644); err != nil {
-		return fmt.Errorf("write kodama.md: %w", err)
+	// Write kodama.md (only if it doesn't exist — preserve existing project context)
+	kodamaMdPath := filepath.Join(repoPath, "kodama.md")
+	if _, err := os.Stat(kodamaMdPath); os.IsNotExist(err) {
+		kodamaMd := GenerateKodamaMd(name, prd)
+		if err := os.WriteFile(kodamaMdPath, []byte(kodamaMd), 0644); err != nil {
+			return fmt.Errorf("write kodama.md: %w", err)
+		}
 	}
 
 	// Write CLAUDE.md bootstrap (only if it doesn't exist)
@@ -77,11 +80,14 @@ func InitProject(repoPath, name, prd, image, agent string, failover bool) error 
 		}
 	}
 
-	// Write kodama.yml
-	repoURL := "github.com/user/" + strings.ToLower(strings.ReplaceAll(name, " ", "-"))
-	kodamaYml := fmt.Sprintf(kodamaYmlTemplate, name, repoURL, image, agent, failover)
-	if err := os.WriteFile(filepath.Join(repoPath, "kodama.yml"), []byte(kodamaYml), 0644); err != nil {
-		return fmt.Errorf("write kodama.yml: %w", err)
+	// Write kodama.yml (only if it doesn't exist — preserve existing config)
+	kodamaYmlPath := filepath.Join(repoPath, "kodama.yml")
+	if _, err := os.Stat(kodamaYmlPath); os.IsNotExist(err) {
+		repoURL := "github.com/user/" + strings.ToLower(strings.ReplaceAll(name, " ", "-"))
+		kodamaYml := fmt.Sprintf(kodamaYmlTemplate, name, repoURL, image, agent, failover)
+		if err := os.WriteFile(kodamaYmlPath, []byte(kodamaYml), 0644); err != nil {
+			return fmt.Errorf("write kodama.yml: %w", err)
+		}
 	}
 
 	return nil
