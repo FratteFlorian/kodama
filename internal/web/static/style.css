@@ -99,6 +99,9 @@ main { padding: 2rem 1.5rem; }
 }
 
 .status-running, .badge.status-running { background: rgba(96, 165, 250, 0.15); color: var(--blue); }
+.status-starting  { background: rgba(251, 191, 36, 0.12); color: var(--yellow); }
+.status-stopping  { background: rgba(107, 112, 128, 0.15); color: var(--muted); }
+.status-stopped   { background: rgba(107, 112, 128, 0.12); color: var(--muted); }
 
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 .running-indicator {
@@ -117,7 +120,7 @@ main { padding: 2rem 1.5rem; }
 .agent-codex { background: rgba(96, 165, 250, 0.15); color: var(--blue); }
 
 /* Task list */
-.backlog, .add-task, .create-form, .task-output, .answer-form {
+.backlog, .add-task, .create-form, .task-output, .answer-form, .project-settings {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -125,7 +128,7 @@ main { padding: 2rem 1.5rem; }
     margin-bottom: 1.25rem;
 }
 
-.backlog h2, .add-task h2, .create-form h2, .task-output h2, .answer-form h2 {
+.backlog h2, .add-task h2, .create-form h2, .task-output h2, .answer-form h2, .project-settings h2 {
     font-size: 1rem;
     font-weight: 600;
     margin-bottom: 1rem;
@@ -247,6 +250,71 @@ pre#output {
 .flash-no_tasks    { background: rgba(251,191,36,0.12); color: var(--yellow); border: 1px solid rgba(251,191,36,0.3); }
 .flash-started     { background: rgba(74,222,128,0.12); color: var(--green);  border: 1px solid rgba(74,222,128,0.3); }
 .flash-already_running { background: rgba(96,165,250,0.12); color: var(--blue); border: 1px solid rgba(96,165,250,0.3); }
+
+/* Task metadata row (session ID, cost, tokens) */
+.task-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+}
+
+.meta-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.8125rem;
+}
+
+.meta-label {
+    color: var(--muted);
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+}
+
+.meta-value {
+    color: var(--text);
+    font-family: var(--font-mono);
+}
+
+.meta-value.copyable {
+    cursor: pointer;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.meta-value.copyable:hover { color: var(--accent); }
+
+/* Dev environment panel */
+.env-status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.env-config-label {
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    flex: 1;
+}
+
+.env-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
 
 /* Projects list */
 .projects-list { margin-bottom: 2rem; }

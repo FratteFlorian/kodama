@@ -43,16 +43,15 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.FormValue("name")
 	repoPath := expandPath(r.FormValue("repo_path"))
-	dockerImage := r.FormValue("docker_image")
 	agent := r.FormValue("agent")
 	prd := r.FormValue("prd")
 	if agent == "" {
 		agent = "claude"
 	}
 
-	slog.Info("creating project", "name", name, "repo_path", repoPath, "docker_image", dockerImage, "agent", agent)
+	slog.Info("creating project", "name", name, "repo_path", repoPath, "agent", agent)
 
-	proj, err := s.db.CreateProject(name, repoPath, dockerImage, agent, false)
+	proj, err := s.db.CreateProject(name, repoPath, "", agent, false)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -62,7 +61,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	// Initialize project files if repo path is set.
 	if repoPath != "" {
 		slog.Info("initializing project files", "repo_path", repoPath)
-		if err := daemon.InitProject(repoPath, name, prd, dockerImage, agent, false); err != nil {
+		if err := daemon.InitProject(repoPath, name, prd, "", agent, false); err != nil {
 			slog.Warn("init project files failed", "repo_path", repoPath, "err", err)
 		} else {
 			slog.Info("project files written", "repo_path", repoPath)
@@ -85,12 +84,38 @@ func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	env, _ := s.db.GetEnvironment(proj.ID) // nil if not configured yet
 	s.renderTemplate(w, "project.html", map[string]any{
-		"Project":   proj,
-		"Tasks":     tasks,
-		"IsRunning": s.daemon != nil && s.daemon.IsRunning(proj.ID),
-		"Msg":       r.URL.Query().Get("msg"),
+		"Project":      proj,
+		"Tasks":        tasks,
+		"IsRunning":    s.daemon != nil && s.daemon.IsRunning(proj.ID),
+		"Env":          env,
+		"IsEnvRunning": s.daemon != nil && s.daemon.IsEnvRunning(proj.ID),
+		"Msg":          r.URL.Query().Get("msg"),
 	})
+}
+
+func (s *Server) handleUpdateProjectSettings(w http.ResponseWriter, r *http.Request) {
+	proj, err := s.getProject(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	dockerImage := r.FormValue("docker_image")
+	agent := r.FormValue("agent")
+	if agent == "" {
+		agent = proj.Agent
+	}
+	if err := s.db.UpdateProject(proj.ID, proj.Name, proj.RepoPath, dockerImage, agent, proj.Failover); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	slog.Info("project settings updated", "project_id", proj.ID, "docker_image", dockerImage, "agent", agent)
+	http.Redirect(w, r, fmt.Sprintf("/projects/%d", proj.ID), http.StatusSeeOther)
 }
 
 func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
@@ -259,6 +284,119 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.hub.Register(taskID, conn)
+}
+
+// --- Environment handlers ---
+
+func (s *Server) handleEnvironmentPage(w http.ResponseWriter, r *http.Request) {
+	proj, err := s.getProject(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	env, err := s.db.GetEnvironment(proj.ID)
+	if err != nil || env == nil {
+		http.Redirect(w, r, fmt.Sprintf("/projects/%d", proj.ID), http.StatusSeeOther)
+		return
+	}
+	s.renderTemplate(w, "environment.html", map[string]any{
+		"Project":   proj,
+		"Env":       env,
+		"IsRunning": s.daemon != nil && s.daemon.IsEnvRunning(proj.ID),
+	})
+}
+
+func (s *Server) handleEnvironmentConfigure(w http.ResponseWriter, r *http.Request) {
+	proj, err := s.getProject(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	envType := r.FormValue("type")
+	if envType == "" {
+		envType = "compose"
+	}
+	configPath := r.FormValue("config_path")
+	if _, err := s.db.UpsertEnvironment(proj.ID, envType, configPath); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	slog.Info("environment configured", "project_id", proj.ID, "type", envType, "config_path", configPath)
+	http.Redirect(w, r, fmt.Sprintf("/projects/%d", proj.ID), http.StatusSeeOther)
+}
+
+func (s *Server) handleEnvironmentStart(w http.ResponseWriter, r *http.Request) {
+	proj, err := s.getProject(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if s.daemon != nil {
+		if err := s.daemon.StartEnvironment(context.Background(), proj.ID); err != nil {
+			slog.Warn("start environment failed", "project_id", proj.ID, "err", err)
+		}
+	}
+	// Redirect to environment log page so the user can watch the startup.
+	env, _ := s.db.GetEnvironment(proj.ID)
+	if env != nil {
+		http.Redirect(w, r, fmt.Sprintf("/projects/%d/environment", proj.ID), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, fmt.Sprintf("/projects/%d", proj.ID), http.StatusSeeOther)
+}
+
+func (s *Server) handleEnvironmentStop(w http.ResponseWriter, r *http.Request) {
+	proj, err := s.getProject(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if s.daemon != nil {
+		if err := s.daemon.StopEnvironment(proj.ID); err != nil {
+			slog.Warn("stop environment failed", "project_id", proj.ID, "err", err)
+		}
+	}
+	http.Redirect(w, r, fmt.Sprintf("/projects/%d/environment", proj.ID), http.StatusSeeOther)
+}
+
+func (s *Server) handleEnvironmentRestart(w http.ResponseWriter, r *http.Request) {
+	proj, err := s.getProject(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if s.daemon != nil {
+		if err := s.daemon.RestartEnvironment(context.Background(), proj.ID); err != nil {
+			slog.Warn("restart environment failed", "project_id", proj.ID, "err", err)
+		}
+	}
+	http.Redirect(w, r, fmt.Sprintf("/projects/%d/environment", proj.ID), http.StatusSeeOther)
+}
+
+func (s *Server) handleEnvironmentWebSocket(w http.ResponseWriter, r *http.Request) {
+	envID, err := getIDParam(r, "id")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	slog.Debug("env websocket connected", "env_id", envID, "remote", r.RemoteAddr)
+
+	// Send existing log as initial content.
+	logContent, _ := s.db.GetEnvironmentLog(envID)
+	if logContent != "" {
+		conn.WriteMessage(websocket.TextMessage, []byte(logContent))
+	}
+
+	s.envHub.Register(envID, conn)
 }
 
 // --- JSON API handlers ---

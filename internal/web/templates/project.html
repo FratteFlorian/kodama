@@ -31,6 +31,55 @@
     </div>
     {{end}}
 
+    <section class="project-settings">
+        <h2>Dev Environment</h2>
+        {{if .Env}}
+        <div class="env-status-row">
+            <span class="badge status-{{envStatusBadge .Env.Status}}">
+                {{if .IsEnvRunning}}● {{end}}{{.Env.Status}}
+            </span>
+            <span class="env-config-label">{{.Env.Type}}: {{.Env.ConfigPath}}</span>
+            <div class="env-controls">
+                {{if .IsEnvRunning}}
+                <a href="/projects/{{.Project.ID}}/environment" class="btn btn-sm">→ Logs</a>
+                <form method="POST" action="/projects/{{.Project.ID}}/environment/restart" style="display:inline">
+                    <button type="submit" class="btn btn-sm">↺ Restart</button>
+                </form>
+                <form method="POST" action="/projects/{{.Project.ID}}/environment/stop" style="display:inline">
+                    <button type="submit" class="btn btn-sm btn-danger">■ Stop</button>
+                </form>
+                {{else}}
+                <a href="/projects/{{.Project.ID}}/environment" class="btn btn-sm">→ Logs</a>
+                <form method="POST" action="/projects/{{.Project.ID}}/environment/start" style="display:inline">
+                    <button type="submit" class="btn btn-sm btn-primary">▶ Start</button>
+                </form>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+        <details {{if not .Env}}open{{end}} style="margin-top:0.75rem">
+            <summary style="cursor:pointer;color:var(--muted);font-size:0.875rem;user-select:none">Configure</summary>
+            <form method="POST" action="/projects/{{.Project.ID}}/environment" style="margin-top:0.75rem">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Type</label>
+                        <select name="type">
+                            <option value="compose" {{if and .Env (eq .Env.Type "compose")}}selected{{end}}>Docker Compose</option>
+                            <option value="dockerfile" {{if and .Env (eq .Env.Type "dockerfile")}}selected{{end}}>Dockerfile</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Config Path</label>
+                        <input type="text" name="config_path"
+                               value="{{if .Env}}{{.Env.ConfigPath}}{{end}}"
+                               placeholder="docker-compose.yml or Dockerfile">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-sm">Save</button>
+            </form>
+        </details>
+    </section>
+
     <section class="backlog">
         <h2>Backlog</h2>
         {{if .Tasks}}
@@ -60,6 +109,29 @@
         {{else}}
             <p class="empty">No tasks yet. Add one below, then click ▶ Start.</p>
         {{end}}
+    </section>
+
+    <section class="project-settings">
+        <h2>Settings</h2>
+        <form method="POST" action="/projects/{{.Project.ID}}/settings">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="docker_image">Docker Image</label>
+                    <input type="text" id="docker_image" name="docker_image"
+                           value="{{.Project.DockerImage}}"
+                           placeholder="golang:1.22 (optional)">
+                    <small class="form-hint">Run the agent inside this container. Leave blank to run on the host.</small>
+                </div>
+                <div class="form-group">
+                    <label for="default_agent">Default Agent</label>
+                    <select id="default_agent" name="agent">
+                        <option value="claude" {{if eq .Project.Agent "claude"}}selected{{end}}>Claude Code</option>
+                        <option value="codex"  {{if eq .Project.Agent "codex"}}selected{{end}}>Codex</option>
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Save</button>
+        </form>
     </section>
 
     <section class="add-task">

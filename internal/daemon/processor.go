@@ -45,6 +45,11 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 		d.db.UpdateTaskStatus(task.ID, db.TaskStatusRunning)
 	}
 
+	// Inject dev environment context if an environment is running for this project.
+	if env := d.envManager.ActiveEnv(proj.ID); env != nil {
+		prompt = injectEnvContext(prompt, env)
+	}
+
 	ag, agentName := d.newAgent(task, proj)
 	entry := agentEntry{ag: ag, name: agentName}
 
@@ -208,6 +213,15 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 		}
 	}
 
+	// Persist session ID and cost/tokens from the completed agent run.
+	if sid := ag.SessionID(); sid != "" {
+		d.db.UpdateTaskSessionID(task.ID, sid)
+	}
+	if cost := ag.CostUSD(); cost > 0 {
+		in, out := ag.TokensUsed()
+		d.db.UpdateTaskCost(task.ID, cost, in, out)
+	}
+
 	// Post-task: update kodama.md with decisions and status.
 	if proj.RepoPath != "" {
 		output := outputBuf.String()
@@ -221,18 +235,28 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	}
 }
 
-// handleQuestion handles a KODAMA_QUESTION signal by notifying the user and waiting
-// for an answer. Because --print mode is single-shot (no stdin pipe back to the
-// agent), answering does NOT write to stdin. Instead the caller is expected to
-// restart the agent with the conversation history + answer prepended to the prompt.
-// This function just blocks until an answer arrives and returns it via the err
-// return — callers embed the answer into the next agent invocation.
+// handleQuestion handles a KODAMA_QUESTION signal by notifying the user, waiting
+// for an answer, then storing the session ID + answer so the caller can resume
+// the exact claude session rather than starting from scratch.
 func (d *Daemon) handleQuestion(ctx context.Context, task *db.Task, question string, ag agent.Agent) error {
 	slog.Info("task waiting for input", "task_id", task.ID, "question", question)
-	d.db.UpdateTaskStatus(task.ID, db.TaskStatusWaiting)
 
-	// Stop the current agent — we'll restart it with the answer.
+	// Capture session ID and cost before stopping the agent.
+	sessionID := ag.SessionID()
+	slog.Info("captured session for resume", "task_id", task.ID, "session_id", sessionID)
+
+	if sessionID != "" {
+		d.db.UpdateTaskSessionID(task.ID, sessionID)
+	}
+	if cost := ag.CostUSD(); cost > 0 {
+		in, out := ag.TokensUsed()
+		d.db.UpdateTaskCost(task.ID, cost, in, out)
+	}
+
+	// Stop the current process — it has already completed its turn.
 	ag.Stop()
+
+	d.db.UpdateTaskStatus(task.ID, db.TaskStatusWaiting)
 
 	// Register a local answer channel (for web UI).
 	localCh := d.registerQuestion(task.ID)
@@ -263,25 +287,31 @@ func (d *Daemon) handleQuestion(ctx context.Context, task *db.Task, question str
 		}
 	}
 
-	// Log the answer as context.
+	// Log the answer.
 	chunk := fmt.Sprintf("[User answered: %s]\n", answer)
 	d.db.AppendTaskLog(task.ID, chunk)
 	if d.hub != nil {
 		d.hub.Broadcast(task.ID, chunk)
 	}
 
-	// Update task description to include the Q&A so the next agent run has full context.
-	prior, _ := d.db.GetFullLog(task.ID)
-	newPrompt := fmt.Sprintf(
-		"%s\n\nPrevious progress and Q&A (continue from here):\n%s\nThe answer to the question %q is: %s",
-		task.Description, prior, question, answer,
-	)
-	if err := d.db.UpdateTaskDescription(task.ID, newPrompt); err != nil {
-		slog.Warn("update task description with Q&A", "err", err)
+	if sessionID != "" {
+		// Best path: resume the exact claude session. Store session ID in the
+		// task description as a special prefix so newAgent/Start can pick it up.
+		// Format: "RESUME:<sessionID>\n<answer>"
+		d.db.UpdateTaskDescription(task.ID, fmt.Sprintf("RESUME:%s\n%s", sessionID, answer))
+		slog.Info("will resume claude session", "task_id", task.ID, "session_id", sessionID)
+	} else {
+		// Fallback (e.g. codex): embed Q&A context in the prompt.
+		prior, _ := d.db.GetFullLog(task.ID)
+		newPrompt := fmt.Sprintf(
+			"%s\n\nPrevious progress:\n%s\nAnswer to %q: %s",
+			task.Description, prior, question, answer,
+		)
+		d.db.UpdateTaskDescription(task.ID, newPrompt)
+		slog.Info("no session ID, falling back to context injection", "task_id", task.ID)
 	}
 
-	// Reset to pending so runProject picks it up again on the next loop iteration.
+	// Reset to pending so runProject picks it up on the next loop iteration.
 	d.db.UpdateTaskStatus(task.ID, db.TaskStatusPending)
-
 	return nil
 }

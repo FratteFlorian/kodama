@@ -75,14 +75,16 @@ func (db *DB) CreateTask(projectID int64, description, agent string, priority in
 
 func (db *DB) GetTask(id int64) (*Task, error) {
 	row := db.sql.QueryRow(
-		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at FROM tasks WHERE id = ?`, id,
+		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at,
+		        session_id, cost_usd, input_tokens, output_tokens FROM tasks WHERE id = ?`, id,
 	)
 	return scanTask(row)
 }
 
 func (db *DB) ListTasks(projectID int64) ([]*Task, error) {
 	rows, err := db.sql.Query(
-		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at
+		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at,
+		        session_id, cost_usd, input_tokens, output_tokens
 		 FROM tasks WHERE project_id = ? ORDER BY priority ASC, created_at ASC`,
 		projectID,
 	)
@@ -103,7 +105,8 @@ func (db *DB) ListTasks(projectID int64) ([]*Task, error) {
 
 func (db *DB) ListPendingTasks(projectID int64) ([]*Task, error) {
 	rows, err := db.sql.Query(
-		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at
+		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at,
+		        session_id, cost_usd, input_tokens, output_tokens
 		 FROM tasks WHERE project_id = ? AND status IN ('pending', 'rate_limited')
 		 ORDER BY priority ASC, created_at ASC`,
 		projectID,
@@ -136,6 +139,19 @@ func (db *DB) UpdateTaskStatus(id int64, status TaskStatus) error {
 		_, err := db.sql.Exec(`UPDATE tasks SET status=? WHERE id=?`, status, id)
 		return err
 	}
+}
+
+func (db *DB) UpdateTaskSessionID(id int64, sessionID string) error {
+	_, err := db.sql.Exec(`UPDATE tasks SET session_id=? WHERE id=?`, sessionID, id)
+	return err
+}
+
+func (db *DB) UpdateTaskCost(id int64, costUSD float64, inputTokens, outputTokens int64) error {
+	_, err := db.sql.Exec(
+		`UPDATE tasks SET cost_usd=?, input_tokens=?, output_tokens=? WHERE id=?`,
+		costUSD, inputTokens, outputTokens, id,
+	)
+	return err
 }
 
 func (db *DB) UpdateTaskDescription(id int64, description string) error {
@@ -229,6 +245,89 @@ func (db *DB) GetLatestCheckpoint(taskID int64) (*TaskCheckpoint, error) {
 	return &cp, nil
 }
 
+// --- Environments ---
+
+// GetEnvironment returns the environment for a project, or nil if none exists.
+func (db *DB) GetEnvironment(projectID int64) (*Environment, error) {
+	row := db.sql.QueryRow(
+		`SELECT id, project_id, type, config_path, status, created_at, started_at, stopped_at
+		 FROM environments WHERE project_id = ? LIMIT 1`, projectID,
+	)
+	return scanEnvironment(row)
+}
+
+// UpsertEnvironment creates or updates the environment config for a project.
+func (db *DB) UpsertEnvironment(projectID int64, envType, configPath string) (*Environment, error) {
+	existing, err := db.GetEnvironment(projectID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		if _, err := db.sql.Exec(
+			`UPDATE environments SET type=?, config_path=? WHERE id=?`,
+			envType, configPath, existing.ID,
+		); err != nil {
+			return nil, err
+		}
+		return db.GetEnvironment(projectID)
+	}
+	res, err := db.sql.Exec(
+		`INSERT INTO environments (project_id, type, config_path) VALUES (?, ?, ?)`,
+		projectID, envType, configPath,
+	)
+	if err != nil {
+		return nil, err
+	}
+	id, _ := res.LastInsertId()
+	row := db.sql.QueryRow(
+		`SELECT id, project_id, type, config_path, status, created_at, started_at, stopped_at
+		 FROM environments WHERE id = ?`, id,
+	)
+	return scanEnvironment(row)
+}
+
+// UpdateEnvironmentStatus updates the status (and timestamps) of an environment.
+func (db *DB) UpdateEnvironmentStatus(id int64, status EnvironmentStatus) error {
+	now := time.Now()
+	switch status {
+	case EnvironmentStatusRunning:
+		_, err := db.sql.Exec(`UPDATE environments SET status=?, started_at=? WHERE id=?`, status, now, id)
+		return err
+	case EnvironmentStatusStopped, EnvironmentStatusError:
+		_, err := db.sql.Exec(`UPDATE environments SET status=?, stopped_at=? WHERE id=?`, status, now, id)
+		return err
+	default:
+		_, err := db.sql.Exec(`UPDATE environments SET status=? WHERE id=?`, status, id)
+		return err
+	}
+}
+
+// AppendEnvironmentLog appends a log chunk for an environment.
+func (db *DB) AppendEnvironmentLog(envID int64, chunk string) error {
+	_, err := db.sql.Exec(`INSERT INTO environment_logs (env_id, chunk) VALUES (?, ?)`, envID, chunk)
+	return err
+}
+
+// GetEnvironmentLog returns the full accumulated log for an environment.
+func (db *DB) GetEnvironmentLog(envID int64) (string, error) {
+	rows, err := db.sql.Query(
+		`SELECT chunk FROM environment_logs WHERE env_id = ? ORDER BY ts ASC, id ASC`, envID,
+	)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var full string
+	for rows.Next() {
+		var chunk string
+		if err := rows.Scan(&chunk); err != nil {
+			return "", err
+		}
+		full += chunk
+	}
+	return full, rows.Err()
+}
+
 // --- Helpers ---
 
 type scanner interface {
@@ -253,7 +352,8 @@ func scanTask(s scanner) (*Task, error) {
 	var t Task
 	var startedAt, completedAt sql.NullTime
 	err := s.Scan(&t.ID, &t.ProjectID, &t.Description, &t.Status, &t.Agent, &t.Priority,
-		&t.CreatedAt, &startedAt, &completedAt)
+		&t.CreatedAt, &startedAt, &completedAt,
+		&t.SessionID, &t.CostUSD, &t.InputTokens, &t.OutputTokens)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("task not found")
@@ -274,4 +374,23 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+func scanEnvironment(s scanner) (*Environment, error) {
+	var e Environment
+	var startedAt, stoppedAt sql.NullTime
+	err := s.Scan(&e.ID, &e.ProjectID, &e.Type, &e.ConfigPath, &e.Status, &e.CreatedAt, &startedAt, &stoppedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if startedAt.Valid {
+		e.StartedAt = &startedAt.Time
+	}
+	if stoppedAt.Valid {
+		e.StoppedAt = &stoppedAt.Time
+	}
+	return &e, nil
 }

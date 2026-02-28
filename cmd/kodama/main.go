@@ -57,11 +57,12 @@ func runDaemon() {
 	defer database.Close()
 	slog.Info("database opened", "path", cfg.DataDir+"/kodama.db")
 
-	// Create WebSocket hub.
+	// Create WebSocket hubs (one for tasks, one for environment logs).
 	hub := web.NewHub()
+	envHub := web.NewHub()
 
 	// Create daemon.
-	d := daemon.New(cfg, database, hub)
+	d := daemon.New(cfg, database, hub, envHub)
 
 	// Set up Telegram bot if configured.
 	if cfg.Telegram.Token != "" && cfg.Telegram.UserID != 0 {
@@ -79,7 +80,7 @@ func runDaemon() {
 	}
 
 	// Create and start web server.
-	srv, err := web.New(cfg, database, hub, d)
+	srv, err := web.New(cfg, database, hub, envHub, d)
 	if err != nil {
 		slog.Error("create web server", "err", err)
 		os.Exit(1)

@@ -25,6 +25,11 @@ type DaemonController interface {
 	StopProject(projectID int64)
 	IsRunning(projectID int64) bool
 	AnswerQuestion(taskID int64, answer string) error
+	// Environment control.
+	StartEnvironment(ctx context.Context, projectID int64) error
+	StopEnvironment(projectID int64) error
+	RestartEnvironment(ctx context.Context, projectID int64) error
+	IsEnvRunning(projectID int64) bool
 }
 
 // Server is the HTTP server for Kodama's web UI.
@@ -32,17 +37,19 @@ type Server struct {
 	cfg       *config.Config
 	db        *db.DB
 	hub       *Hub
+	envHub    *Hub // for environment WebSocket streams
 	daemon    DaemonController
 	router    chi.Router
 	templates map[string]*template.Template
 }
 
 // New creates and configures a new web Server.
-func New(cfg *config.Config, database *db.DB, hub *Hub, daemon DaemonController) (*Server, error) {
+func New(cfg *config.Config, database *db.DB, hub *Hub, envHub *Hub, daemon DaemonController) (*Server, error) {
 	s := &Server{
 		cfg:    cfg,
 		db:     database,
 		hub:    hub,
+		envHub: envHub,
 		daemon: daemon,
 	}
 
@@ -53,7 +60,7 @@ func New(cfg *config.Config, database *db.DB, hub *Hub, daemon DaemonController)
 
 	// Parse each page as its own template set (layout + page).
 	// This prevents {{define "content"}} blocks from conflicting across pages.
-	pages := []string{"index.html", "project.html", "task.html"}
+	pages := []string{"index.html", "project.html", "task.html", "environment.html"}
 	s.templates = make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		t, err := template.New("").Funcs(templateFuncs()).ParseFS(tmplFS, "layout.html", page)
@@ -93,11 +100,20 @@ func (s *Server) buildRouter() chi.Router {
 	// Keep REST routes for the JSON API and TUI.
 	r.Put("/projects/{id}/tasks/{tid}", s.handleUpdateTask)
 	r.Delete("/projects/{id}/tasks/{tid}", s.handleDeleteTask)
+	r.Post("/projects/{id}/settings", s.handleUpdateProjectSettings)
 	r.Post("/projects/{id}/start", s.handleStartProject)
 	r.Post("/projects/{id}/stop", s.handleStopProject)
 	r.Get("/tasks/{id}", s.handleTask)
 	r.Post("/tasks/{id}/answer", s.handleAnswerQuestion)
 	r.Get("/ws/tasks/{id}", s.handleWebSocket)
+
+	// Dev environment routes.
+	r.Get("/projects/{id}/environment", s.handleEnvironmentPage)
+	r.Post("/projects/{id}/environment", s.handleEnvironmentConfigure)
+	r.Post("/projects/{id}/environment/start", s.handleEnvironmentStart)
+	r.Post("/projects/{id}/environment/stop", s.handleEnvironmentStop)
+	r.Post("/projects/{id}/environment/restart", s.handleEnvironmentRestart)
+	r.Get("/ws/environment/{id}", s.handleEnvironmentWebSocket)
 
 	// JSON API (for TUI).
 	r.Get("/api/projects", s.apiListProjects)
@@ -131,6 +147,20 @@ func templateFuncs() template.FuncMap {
 				return "rate-limited"
 			default:
 				return "pending"
+			}
+		},
+		"envStatusBadge": func(status db.EnvironmentStatus) string {
+			switch status {
+			case db.EnvironmentStatusRunning:
+				return "running"
+			case db.EnvironmentStatusStarting:
+				return "starting"
+			case db.EnvironmentStatusStopping:
+				return "stopping"
+			case db.EnvironmentStatusError:
+				return "failed"
+			default:
+				return "stopped"
 			}
 		},
 	}

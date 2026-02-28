@@ -23,7 +23,8 @@ func newTestServer(t *testing.T) (*Server, *db.DB) {
 
 	cfg := &config.Config{Port: 8080}
 	hub := NewHub()
-	srv, err := New(cfg, database, hub, nil)
+	envHub := NewHub()
+	srv, err := New(cfg, database, hub, envHub, nil)
 	require.NoError(t, err)
 	return srv, database
 }
@@ -173,6 +174,66 @@ func TestStaticAssets(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestEnvironmentConfigureAndPage(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	proj, err := database.CreateProject("proj", "/tmp", "", "claude", false)
+	require.NoError(t, err)
+
+	// Configure environment via POST.
+	form := url.Values{}
+	form.Set("type", "compose")
+	form.Set("config_path", "docker-compose.yml")
+	req := httptest.NewRequest(http.MethodPost, "/projects/"+itoa(proj.ID)+"/environment",
+		strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusSeeOther, rec.Code)
+
+	// Verify env was saved.
+	env, err := database.GetEnvironment(proj.ID)
+	require.NoError(t, err)
+	require.NotNil(t, env)
+	assert.Equal(t, "compose", env.Type)
+	assert.Equal(t, "docker-compose.yml", env.ConfigPath)
+
+	// GET environment log page.
+	req2 := httptest.NewRequest(http.MethodGet, "/projects/"+itoa(proj.ID)+"/environment", nil)
+	rec2 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec2, req2)
+	assert.Equal(t, http.StatusOK, rec2.Code)
+	assert.Contains(t, rec2.Body.String(), "Dev Environment")
+	assert.Contains(t, rec2.Body.String(), "docker-compose.yml")
+}
+
+func TestEnvironmentPageRedirectsWhenNotConfigured(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	proj, err := database.CreateProject("proj", "/tmp", "", "claude", false)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/"+itoa(proj.ID)+"/environment", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	// No env configured → redirect to project page.
+	assert.Equal(t, http.StatusSeeOther, rec.Code)
+}
+
+func TestProjectPageShowsEnvironmentPanel(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	proj, err := database.CreateProject("proj", "/tmp", "", "claude", false)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/projects/"+itoa(proj.ID), nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	// Environment panel should always be present.
+	assert.Contains(t, rec.Body.String(), "Dev Environment")
 }
 
 func itoa(n int64) string {

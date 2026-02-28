@@ -182,3 +182,77 @@ func TestCascadeDelete(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, tasks)
 }
+
+func TestEnvironmentCRUD(t *testing.T) {
+	db := openTestDB(t)
+
+	p, err := db.CreateProject("proj", "/repo", "", "claude", false)
+	require.NoError(t, err)
+
+	// No env yet — should return nil, nil.
+	env, err := db.GetEnvironment(p.ID)
+	require.NoError(t, err)
+	assert.Nil(t, env)
+
+	// Upsert (create).
+	env, err = db.UpsertEnvironment(p.ID, "compose", "docker-compose.yml")
+	require.NoError(t, err)
+	require.NotNil(t, env)
+	assert.Equal(t, "compose", env.Type)
+	assert.Equal(t, "docker-compose.yml", env.ConfigPath)
+	assert.Equal(t, EnvironmentStatusStopped, env.Status)
+
+	// Upsert (update).
+	env, err = db.UpsertEnvironment(p.ID, "dockerfile", "Dockerfile")
+	require.NoError(t, err)
+	assert.Equal(t, "dockerfile", env.Type)
+	assert.Equal(t, "Dockerfile", env.ConfigPath)
+
+	// Update status.
+	err = db.UpdateEnvironmentStatus(env.ID, EnvironmentStatusRunning)
+	require.NoError(t, err)
+	env, _ = db.GetEnvironment(p.ID)
+	assert.Equal(t, EnvironmentStatusRunning, env.Status)
+	assert.NotNil(t, env.StartedAt)
+
+	err = db.UpdateEnvironmentStatus(env.ID, EnvironmentStatusStopped)
+	require.NoError(t, err)
+	env, _ = db.GetEnvironment(p.ID)
+	assert.Equal(t, EnvironmentStatusStopped, env.Status)
+	assert.NotNil(t, env.StoppedAt)
+}
+
+func TestEnvironmentLogs(t *testing.T) {
+	db := openTestDB(t)
+
+	p, _ := db.CreateProject("proj", "/repo", "", "claude", false)
+	env, err := db.UpsertEnvironment(p.ID, "compose", "docker-compose.yml")
+	require.NoError(t, err)
+
+	err = db.AppendEnvironmentLog(env.ID, "starting...\n")
+	require.NoError(t, err)
+	err = db.AppendEnvironmentLog(env.ID, "ready\n")
+	require.NoError(t, err)
+
+	log, err := db.GetEnvironmentLog(env.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "starting...\nready\n", log)
+}
+
+func TestEnvironmentCascadeDeleteWithProject(t *testing.T) {
+	db := openTestDB(t)
+
+	p, _ := db.CreateProject("proj", "/repo", "", "claude", false)
+	env, err := db.UpsertEnvironment(p.ID, "compose", "docker-compose.yml")
+	require.NoError(t, err)
+	db.AppendEnvironmentLog(env.ID, "log line\n")
+
+	// Delete project → env and logs should cascade.
+	err = db.DeleteProject(p.ID)
+	require.NoError(t, err)
+
+	// Env should be gone.
+	got, err := db.GetEnvironment(p.ID)
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}

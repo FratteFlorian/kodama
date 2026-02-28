@@ -36,11 +36,12 @@ type agentEntry struct {
 
 // Daemon manages task queue processing and coordinates all subsystems.
 type Daemon struct {
-	cfg      *config.Config
-	db       *db.DB
-	hub      Broadcaster
-	notifier Notifier
-	qa       QuestionAnswerer
+	cfg        *config.Config
+	db         *db.DB
+	hub        Broadcaster
+	notifier   Notifier
+	qa         QuestionAnswerer
+	envManager *EnvironmentManager
 
 	// Per-task question answer channels (used when Telegram is unavailable).
 	questions   map[int64]chan string
@@ -52,13 +53,14 @@ type Daemon struct {
 }
 
 // New creates a new Daemon.
-func New(cfg *config.Config, database *db.DB, hub Broadcaster) *Daemon {
+func New(cfg *config.Config, database *db.DB, hub Broadcaster, envHub Broadcaster) *Daemon {
 	return &Daemon{
-		cfg:       cfg,
-		db:        database,
-		hub:       hub,
-		questions: make(map[int64]chan string),
-		projects:  make(map[int64]context.CancelFunc),
+		cfg:        cfg,
+		db:         database,
+		hub:        hub,
+		envManager: NewEnvironmentManager(database, envHub),
+		questions:  make(map[int64]chan string),
+		projects:   make(map[int64]context.CancelFunc),
 	}
 }
 
@@ -201,12 +203,6 @@ func (d *Daemon) newAgent(task *db.Task, proj *db.Project) (agent.Agent, string)
 		slog.Info("selected agent", "agent", "claude", "binary", d.cfg.Claude.Binary, "task_id", task.ID)
 	}
 
-	// Wrap in Docker if project has an image configured.
-	if proj.DockerImage != "" {
-		slog.Info("wrapping agent in docker", "image", proj.DockerImage, "repo_path", proj.RepoPath)
-		ag = agent.NewDockerAgent(ag, proj.DockerImage, proj.RepoPath)
-	}
-
 	return ag, agentName
 }
 
@@ -216,4 +212,48 @@ func kodamaMdPath(proj *db.Project) string {
 		return ""
 	}
 	return filepath.Join(proj.RepoPath, "kodama.md")
+}
+
+// StartEnvironment starts the dev environment for a project.
+func (d *Daemon) StartEnvironment(ctx context.Context, projectID int64) error {
+	env, err := d.db.GetEnvironment(projectID)
+	if err != nil {
+		return fmt.Errorf("get environment: %w", err)
+	}
+	if env == nil {
+		return fmt.Errorf("no environment configured for project %d", projectID)
+	}
+	proj, err := d.db.GetProject(projectID)
+	if err != nil {
+		return fmt.Errorf("get project: %w", err)
+	}
+	return d.envManager.Start(ctx, env, proj.RepoPath)
+}
+
+// StopEnvironment stops the dev environment for a project.
+func (d *Daemon) StopEnvironment(projectID int64) error {
+	env, err := d.db.GetEnvironment(projectID)
+	if err != nil || env == nil {
+		return fmt.Errorf("no environment for project %d", projectID)
+	}
+	return d.envManager.Stop(env.ID)
+}
+
+// RestartEnvironment stops the environment (waiting for teardown) then starts it again.
+func (d *Daemon) RestartEnvironment(ctx context.Context, projectID int64) error {
+	env, err := d.db.GetEnvironment(projectID)
+	if err != nil || env == nil {
+		return fmt.Errorf("no environment for project %d", projectID)
+	}
+	d.envManager.StopAndWait(env.ID)
+	return d.StartEnvironment(ctx, projectID)
+}
+
+// IsEnvRunning returns whether a project's dev environment is currently running.
+func (d *Daemon) IsEnvRunning(projectID int64) bool {
+	env, err := d.db.GetEnvironment(projectID)
+	if err != nil || env == nil {
+		return false
+	}
+	return d.envManager.IsRunning(env.ID)
 }

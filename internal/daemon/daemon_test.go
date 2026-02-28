@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/florian/kodama/internal/db"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -117,4 +118,38 @@ func TestUpdateKodamaMdMissing(t *testing.T) {
 	// Should not error if kodama.md doesn't exist.
 	err := UpdateKodamaMd(t.TempDir(), nil, "")
 	assert.NoError(t, err)
+}
+
+func TestInjectEnvContextCompose(t *testing.T) {
+	env := &db.Environment{
+		ID:         1,
+		ProjectID:  42,
+		Type:       "compose",
+		ConfigPath: "docker-compose.yml",
+	}
+	result := injectEnvContext("do the task", env)
+	assert.Contains(t, result, "docker compose -f docker-compose.yml exec")
+	assert.Contains(t, result, "do the task")
+	// Note should be prepended.
+	assert.True(t, strings.HasPrefix(result, "Note:"))
+}
+
+func TestInjectEnvContextDockerfile(t *testing.T) {
+	env := &db.Environment{
+		ID:        2,
+		ProjectID: 7,
+		Type:      "dockerfile",
+		ConfigPath: "Dockerfile",
+	}
+	result := injectEnvContext("do the task", env)
+	assert.Contains(t, result, "docker exec kodama-env-7")
+	assert.Contains(t, result, "do the task")
+	assert.True(t, strings.HasPrefix(result, "Note:"))
+}
+
+func TestInjectEnvContextUnknownType(t *testing.T) {
+	env := &db.Environment{Type: "unknown"}
+	// Unknown type — prompt returned unchanged.
+	result := injectEnvContext("do the task", env)
+	assert.Equal(t, "do the task", result)
 }

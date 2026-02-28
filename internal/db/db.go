@@ -83,10 +83,43 @@ CREATE TABLE IF NOT EXISTS task_checkpoints (
     created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS environments (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id    INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    type          TEXT NOT NULL DEFAULT 'compose',
+    config_path   TEXT NOT NULL DEFAULT '',
+    status        TEXT NOT NULL DEFAULT 'stopped',
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at    DATETIME,
+    stopped_at    DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS environment_logs (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    env_id  INTEGER NOT NULL REFERENCES environments(id) ON DELETE CASCADE,
+    chunk   TEXT NOT NULL,
+    ts      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_task_logs_task_id ON task_logs(task_id);
+CREATE INDEX IF NOT EXISTS idx_environments_project_id ON environments(project_id);
+CREATE INDEX IF NOT EXISTS idx_environment_logs_env_id ON environment_logs(env_id);
 `
-	_, err := db.sql.Exec(schema)
-	return err
+	if _, err := db.sql.Exec(schema); err != nil {
+		return err
+	}
+	// Additive migrations: add columns to existing tables.
+	// SQLite errors on duplicate column names — ignore those errors.
+	migrations := []string{
+		`ALTER TABLE tasks ADD COLUMN session_id    TEXT    NOT NULL DEFAULT ''`,
+		`ALTER TABLE tasks ADD COLUMN cost_usd      REAL    NOT NULL DEFAULT 0`,
+		`ALTER TABLE tasks ADD COLUMN input_tokens  INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE tasks ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0`,
+	}
+	for _, m := range migrations {
+		db.sql.Exec(m) // ignore error: "duplicate column name" is expected on re-open
+	}
+	return nil
 }

@@ -1,0 +1,75 @@
+{{define "title"}}Environment — {{.Project.Name}} — Kodama{{end}}
+
+{{define "content"}}
+<div class="container">
+    <div class="page-header">
+        <div>
+            <a href="/projects/{{.Project.ID}}" class="back-link">← {{.Project.Name}}</a>
+            <h1>Dev Environment</h1>
+            <span class="badge status-{{envStatusBadge .Env.Status}}">
+                {{if .IsRunning}}● {{end}}{{.Env.Status}}
+            </span>
+        </div>
+        <div class="project-controls">
+            {{if .IsRunning}}
+            <form method="POST" action="/projects/{{.Project.ID}}/environment/restart" style="display:inline">
+                <button type="submit" class="btn btn-sm">↺ Restart</button>
+            </form>
+            <form method="POST" action="/projects/{{.Project.ID}}/environment/stop" style="display:inline">
+                <button type="submit" class="btn btn-sm btn-danger">■ Stop</button>
+            </form>
+            {{else}}
+            <form method="POST" action="/projects/{{.Project.ID}}/environment/start" style="display:inline">
+                <button type="submit" class="btn btn-sm btn-primary">▶ Start</button>
+            </form>
+            {{end}}
+        </div>
+    </div>
+
+    <div class="task-meta-row">
+        <div class="meta-chip">
+            <span class="meta-label">type</span>
+            <span class="meta-value">{{.Env.Type}}</span>
+        </div>
+        <div class="meta-chip">
+            <span class="meta-label">config</span>
+            <span class="meta-value">{{.Env.ConfigPath}}</span>
+        </div>
+    </div>
+
+    <section class="task-output">
+        <h2>Logs
+            {{if .IsRunning}}<span class="running-indicator">⏳ running…</span>{{end}}
+        </h2>
+        <div id="output-container" class="output-box">
+            <pre id="output"></pre>
+        </div>
+    </section>
+</div>
+
+<script>
+(function() {
+    const envID = {{.Env.ID}};
+    const isRunning = {{.IsRunning}};
+    const output = document.getElementById('output');
+    const container = document.getElementById('output-container');
+
+    const wsURL = 'ws://' + window.location.host + '/ws/environment/' + envID;
+    const ws = new WebSocket(wsURL);
+
+    ws.onmessage = function(event) {
+        output.textContent += event.data;
+        container.scrollTop = container.scrollHeight;
+    };
+
+    ws.onclose = function() {
+        // Reload to show updated status when env stops or starts.
+        if (isRunning) {
+            setTimeout(function() { window.location.reload(); }, 2000);
+        }
+    };
+
+    container.scrollTop = container.scrollHeight;
+})();
+</script>
+{{end}}
