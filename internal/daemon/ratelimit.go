@@ -35,8 +35,13 @@ func (d *Daemon) handleRateLimit(ctx context.Context, task *db.Task, lastOutput 
 		altAgent := alternateAgent(ag.name, proj)
 		if altAgent != ag.name {
 			d.db.UpdateTaskAgent(task.ID, altAgent)
-			d.db.UpdateTaskStatus(task.ID, db.TaskStatusPending)
-			go d.processTask(ctx, task)
+			freshTask, err := d.db.GetTask(task.ID)
+			if err != nil {
+				slog.Error("get task for failover", "err", err)
+				return
+			}
+			freshTask.Status = db.TaskStatusRateLimited
+			go d.processTask(ctx, freshTask)
 			return
 		}
 	}
@@ -53,7 +58,7 @@ func (d *Daemon) handleRateLimit(ctx context.Context, task *db.Task, lastOutput 
 			slog.Error("get task for resume", "err", err)
 			return
 		}
-		freshTask.Status = db.TaskStatusPending
+		freshTask.Status = db.TaskStatusRateLimited
 		go d.processTask(ctx, freshTask)
 	})
 }

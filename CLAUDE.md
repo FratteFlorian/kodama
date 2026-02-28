@@ -1,15 +1,14 @@
 # Kodama Code
 
-Kodama is a self-hosted autonomous coding daemon that wraps Claude Code, allowing async task execution via a web UI or TUI. It is a personal developer productivity tool — not a general-purpose product — but built cleanly enough to be shared as open source.
+Kodama is a self-hosted autonomous coding daemon that wraps Claude Code, allowing async task execution via a web UI. It is a personal developer productivity tool — not a general-purpose product — but built cleanly enough to be shared as open source.
 
 The name comes from the Japanese forest spirit that quietly works in the background. That's exactly what Kodama does.
 
 ## Core Philosophy
 
-- **Minimal CLI surface** — two commands only, everything else lives in the UI
+- **Minimal CLI surface** — one command only, everything else lives in the UI
 - **Single binary** — Go, fully self-contained, embeds frontend assets
 - **Always-on daemon** — web UI starts automatically with the daemon
-- **TUI is a client** — connects to the running daemon, not a separate mode
 - **Tests are not optional** — every component must have tests, no exceptions
 - **Fits within Anthropic ToS** — Kodama wraps the official `claude` CLI as a subprocess, never extracts or reuses OAuth tokens
 
@@ -17,7 +16,6 @@ The name comes from the Japanese forest spirit that quietly works in the backgro
 
 ```
 kodama          # Start daemon + web UI (default port 8080)
-kodama tui      # Connect TUI to running daemon
 ```
 
 No other CLI commands. Project init and backlog management happen inside the UI.
@@ -47,12 +45,6 @@ No other CLI commands. Project init and backlog management happen inside the UI.
   - Task history with output logs
   - "Start" button per project — kicks off sequential backlog processing
   - Status indicators: idle / running / waiting for input / rate limited / done
-
-### TUI
-- Built with Bubble Tea (github.com/charmbracelet/bubbletea)
-- Connects to running daemon via its local API/WebSocket
-- Mirrors web UI functionality for SSH sessions
-- Same data, same daemon — TUI is purely a presentation layer
 
 ### Telegram Bot
 - Uses go-telegram-bot-api
@@ -153,7 +145,7 @@ failover: true          # enable YOLO failover
 image: golang:1.22
 ```
 
-In the web UI and TUI, each task shows an agent dropdown:
+In the web UI, each task shows an agent dropdown:
 ```
 [ ] Implement auth module          [agent: claude  ▼]
 [ ] Write tests for auth module    [agent: codex   ▼]
@@ -247,7 +239,6 @@ Never stop and wait without using one of these prefixes.
 - **Web framework:** standard `net/http` + Chi router
 - **Frontend:** HTMX + Go templates, embedded via `go:embed`
 - **Database:** SQLite via `modernc.org/sqlite` (pure Go, no CGO)
-- **TUI:** Bubble Tea (`github.com/charmbracelet/bubbletea`)
 - **Telegram:** `github.com/go-telegram-bot-api/telegram-bot-api/v5`
 - **Process management:** `os/exec` with stdin/stdout pipes
 
@@ -301,7 +292,6 @@ kodama/
 │   ├── web/             # HTTP server, handlers, WebSocket streaming
 │   │   └── templates/   # Go HTML templates
 │   │   └── static/      # JS/CSS (HTMX etc), embedded
-│   └── tui/             # Bubble Tea TUI
 ├── tests/
 │   └── mocks/           # mock claude binary, mock telegram API
 ├── kodama.yml           # Kodama's own project config (dogfooding)
@@ -403,6 +393,5 @@ For Kodama's own development, the active agent must follow this protocol at all 
 4. Web UI (`internal/web`) — project/task management, live WebSocket streaming
 5. Telegram integration (`internal/telegram`) — notifications + reply forwarding
 6. Docker project environments — per-project container spawning
-7. TUI (`internal/tui`) — Bubble Tea client
 8. Project init flow — kodama.yml + CLAUDE.md generation from PRD
 9. Auto CLAUDE.md updates after task completion

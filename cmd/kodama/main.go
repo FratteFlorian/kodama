@@ -13,7 +13,6 @@ import (
 	"github.com/florian/kodama/internal/daemon"
 	"github.com/florian/kodama/internal/db"
 	"github.com/florian/kodama/internal/telegram"
-	"github.com/florian/kodama/internal/tui"
 	"github.com/florian/kodama/internal/web"
 )
 
@@ -25,10 +24,6 @@ func main() {
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
 
-	if len(os.Args) > 1 && os.Args[1] == "tui" {
-		runTUI()
-		return
-	}
 	runDaemon()
 }
 
@@ -110,21 +105,6 @@ func runDaemon() {
 	fmt.Printf("Kodama running at http://localhost%s\n", addr)
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		slog.Error("http server", "err", err)
-		os.Exit(1)
-	}
-}
-
-func runTUI() {
-	// Determine daemon URL.
-	port := 8080
-	cfg, err := config.Load()
-	if err == nil {
-		port = cfg.Port
-	}
-	baseURL := fmt.Sprintf("http://localhost:%d", port)
-
-	if err := tui.Run(baseURL); err != nil {
-		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
 		os.Exit(1)
 	}
 }

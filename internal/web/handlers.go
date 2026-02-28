@@ -6,21 +6,47 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/gorilla/websocket"
 	"github.com/florian/kodama/internal/daemon"
 	"github.com/florian/kodama/internal/db"
+	"github.com/go-chi/chi/v5"
+	"github.com/gorilla/websocket"
 )
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	CheckOrigin:     sameOrigin,
+}
+
+func sameOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	if u.Host == r.Host {
+		return true
+	}
+	originHost := strings.Split(u.Host, ":")[0]
+	reqHost := strings.Split(r.Host, ":")[0]
+	if originHost == reqHost {
+		return true
+	}
+	// Allow localhost variants.
+	if (originHost == "localhost" || originHost == "127.0.0.1") &&
+		(reqHost == "localhost" || reqHost == "127.0.0.1") {
+		return true
+	}
+	return false
 }
 
 // --- HTML handlers ---

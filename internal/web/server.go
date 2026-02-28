@@ -97,7 +97,7 @@ func (s *Server) buildRouter() chi.Router {
 	// HTML forms can only GET/POST, so expose dedicated POST routes for update/delete.
 	r.Post("/projects/{id}/tasks/{tid}/delete", s.handleDeleteTask)
 	r.Post("/projects/{id}/tasks/{tid}/agent", s.handleUpdateTaskAgent)
-	// Keep REST routes for the JSON API and TUI.
+		// Keep REST routes for the JSON API.
 	r.Put("/projects/{id}/tasks/{tid}", s.handleUpdateTask)
 	r.Delete("/projects/{id}/tasks/{tid}", s.handleDeleteTask)
 	r.Post("/projects/{id}/settings", s.handleUpdateProjectSettings)
@@ -115,7 +115,7 @@ func (s *Server) buildRouter() chi.Router {
 	r.Post("/projects/{id}/environment/restart", s.handleEnvironmentRestart)
 	r.Get("/ws/environment/{id}", s.handleEnvironmentWebSocket)
 
-	// JSON API (for TUI).
+		// JSON API.
 	r.Get("/api/projects", s.apiListProjects)
 	r.Get("/api/projects/{id}", s.apiGetProject)
 	r.Post("/api/projects", s.apiCreateProject)

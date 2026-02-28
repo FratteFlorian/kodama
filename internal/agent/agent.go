@@ -41,4 +41,7 @@ type Agent interface {
 
 	// TokensUsed returns the input and output token counts for the last run, if available.
 	TokensUsed() (inputTokens, outputTokens int64)
+
+	// LastError returns the last process error (if any) after the agent exits.
+	LastError() error
 }

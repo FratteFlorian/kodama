@@ -117,6 +117,8 @@ CREATE INDEX IF NOT EXISTS idx_environment_logs_env_id ON environment_logs(env_i
 		`ALTER TABLE tasks ADD COLUMN cost_usd      REAL    NOT NULL DEFAULT 0`,
 		`ALTER TABLE tasks ADD COLUMN input_tokens  INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE tasks ADD COLUMN output_tokens INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE tasks ADD COLUMN resume_question TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE tasks ADD COLUMN resume_answer   TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, m := range migrations {
 		db.sql.Exec(m) // ignore error: "duplicate column name" is expected on re-open

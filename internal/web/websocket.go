@@ -83,7 +83,7 @@ func (h *Hub) Broadcast(taskID int64, chunk string) {
 	}
 }
 
-// unregister removes a client and closes its send channel.
+// unregister removes a client.
 func (h *Hub) unregister(c *client) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -92,7 +92,6 @@ func (h *Hub) unregister(c *client) {
 	for i, cl := range clients {
 		if cl == c {
 			h.clients[c.taskID] = append(clients[:i], clients[i+1:]...)
-			close(c.send)
 			break
 		}
 	}

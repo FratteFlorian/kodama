@@ -16,28 +16,26 @@
         <p>{{.Task.Description}}</p>
     </div>
 
-    {{if or .Task.SessionID .Task.CostUSD}}
     <div class="task-meta-row">
-        {{if .Task.SessionID}}
         <div class="meta-chip" title="Click to copy session ID">
             <span class="meta-label">session</span>
+            {{if .Task.SessionID}}
             <code class="meta-value copyable" onclick="navigator.clipboard.writeText('{{.Task.SessionID}}');this.textContent='copied!';setTimeout(()=>this.textContent='{{.Task.SessionID}}',1500)">{{.Task.SessionID}}</code>
+            {{else}}
+            <span class="meta-value">N/A</span>
+            {{end}}
         </div>
-        {{end}}
-        {{if .Task.CostUSD}}
         <div class="meta-chip">
             <span class="meta-label">cost</span>
-            <span class="meta-value">${{printf "%.4f" .Task.CostUSD}}</span>
+            <span class="meta-value">{{if .Task.CostUSD}}${{printf "%.4f" .Task.CostUSD}}{{else}}N/A{{end}}</span>
         </div>
-        {{end}}
-        {{if .Task.InputTokens}}
         <div class="meta-chip">
             <span class="meta-label">tokens</span>
-            <span class="meta-value">{{.Task.InputTokens}} in / {{.Task.OutputTokens}} out</span>
+            <span class="meta-value">
+                {{if or .Task.InputTokens .Task.OutputTokens}}{{.Task.InputTokens}} in / {{.Task.OutputTokens}} out{{else}}N/A{{end}}
+            </span>
         </div>
-        {{end}}
     </div>
-    {{end}}
 
     {{if eq .Task.Status "waiting"}}
     <section class="answer-form">

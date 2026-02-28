@@ -23,6 +23,7 @@ type ClaudeAgent struct {
 	costUSD      float64 // from result event
 	inputTokens  int64   // from result event
 	outputTokens int64   // from result event
+	lastErr      error
 }
 
 // NewClaudeAgent creates a new ClaudeAgent using the given binary path.
@@ -153,6 +154,9 @@ func (a *ClaudeAgent) Start(workdir, task, contextFile string) error {
 		wg.Wait()
 		err := cmd.Wait()
 		slog.Info("claude process exited", "pid", cmd.Process.Pid, "err", err)
+		a.mu.Lock()
+		a.lastErr = err
+		a.mu.Unlock()
 		close(a.output)
 	}()
 
@@ -212,6 +216,13 @@ func (a *ClaudeAgent) TokensUsed() (int64, int64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.inputTokens, a.outputTokens
+}
+
+// LastError returns the last process error after exit (if any).
+func (a *ClaudeAgent) LastError() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.lastErr
 }
 
 // Write is not supported in --print mode (single-shot, no multi-turn).

@@ -32,6 +32,3 @@ clean:
 
 run: build
 	./$(BINARY)
-
-run-tui: build
-	./$(BINARY) tui

@@ -45,6 +45,24 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 		d.db.UpdateTaskStatus(task.ID, db.TaskStatusRunning)
 	}
 
+	// Resume a waiting conversation without mutating the original task description.
+	if task.ResumeAnswer != "" {
+		if task.SessionID != "" {
+			prompt = fmt.Sprintf("RESUME:%s\n%s", task.SessionID, task.ResumeAnswer)
+		} else {
+			prior, _ := d.db.GetFullLog(task.ID)
+			question := task.ResumeQuestion
+			if question == "" {
+				question = "question"
+			}
+			prompt = fmt.Sprintf(
+				"%s\n\nPrevious progress:\n%s\nAnswer to %q: %s",
+				task.Description, prior, question, task.ResumeAnswer,
+			)
+		}
+		d.db.ClearTaskResume(task.ID)
+	}
+
 	// Inject dev environment context if an environment is running for this project.
 	if env := d.envManager.ActiveEnv(proj.ID); env != nil {
 		prompt = injectEnvContext(prompt, env)
@@ -221,8 +239,14 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	// KODAMA_DONE emitted), mark the task done now rather than leaving it stuck
 	// in "running".
 	if !finalised {
-		slog.Info("agent exited without signal, marking task done", "task_id", task.ID)
-		d.db.UpdateTaskStatus(task.ID, db.TaskStatusDone)
+		if err := ag.LastError(); err != nil {
+			slog.Warn("agent exited with error", "task_id", task.ID, "err", err)
+			d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
+			d.sendNotification(fmt.Sprintf("Task #%d failed: %v", task.ID, err))
+		} else {
+			slog.Info("agent exited without signal, marking task done", "task_id", task.ID)
+			d.db.UpdateTaskStatus(task.ID, db.TaskStatusDone)
+		}
 	}
 
 	// Drain any remaining output so captureMetadata has processed the result
@@ -234,8 +258,9 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	if sid := ag.SessionID(); sid != "" {
 		d.db.UpdateTaskSessionID(task.ID, sid)
 	}
-	if cost := ag.CostUSD(); cost > 0 {
-		in, out := ag.TokensUsed()
+	cost := ag.CostUSD()
+	in, out := ag.TokensUsed()
+	if cost > 0 || in > 0 || out > 0 {
 		d.db.UpdateTaskCost(task.ID, cost, in, out)
 	}
 
@@ -311,21 +336,12 @@ func (d *Daemon) handleQuestion(ctx context.Context, task *db.Task, question str
 		d.hub.Broadcast(task.ID, chunk)
 	}
 
+	// Store resume context without mutating the task description.
+	d.db.UpdateTaskResume(task.ID, question, answer)
 	if sessionID != "" {
-		// Best path: resume the exact claude session. Store session ID in the
-		// task description as a special prefix so newAgent/Start can pick it up.
-		// Format: "RESUME:<sessionID>\n<answer>"
-		d.db.UpdateTaskDescription(task.ID, fmt.Sprintf("RESUME:%s\n%s", sessionID, answer))
 		slog.Info("will resume claude session", "task_id", task.ID, "session_id", sessionID)
 	} else {
-		// Fallback (e.g. codex): embed Q&A context in the prompt.
-		prior, _ := d.db.GetFullLog(task.ID)
-		newPrompt := fmt.Sprintf(
-			"%s\n\nPrevious progress:\n%s\nAnswer to %q: %s",
-			task.Description, prior, question, answer,
-		)
-		d.db.UpdateTaskDescription(task.ID, newPrompt)
-		slog.Info("no session ID, falling back to context injection", "task_id", task.ID)
+		slog.Info("no session ID, will resume via context injection", "task_id", task.ID)
 	}
 
 	// Reset to pending so runProject picks it up on the next loop iteration.

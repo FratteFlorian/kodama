@@ -1,6 +1,6 @@
 # Kodama
 
-A self-hosted autonomous coding daemon that wraps Claude Code and Codex as subprocesses, managing async task execution via a web UI and TUI.
+A self-hosted autonomous coding daemon that wraps Claude Code and Codex as subprocesses, managing async task execution via a web UI.
 
 Named after the Japanese forest spirit that quietly works in the background.
 
@@ -9,9 +9,6 @@ Named after the Japanese forest spirit that quietly works in the background.
 ```bash
 # Start daemon + web UI
 kodama
-
-# Connect TUI to running daemon (in another terminal)
-kodama tui
 ```
 
 Open http://localhost:8080 to access the web UI.
@@ -19,7 +16,6 @@ Open http://localhost:8080 to access the web UI.
 ## Features
 
 - **Web UI**: Project/backlog management, live task output streaming via WebSocket
-- **TUI**: Bubble Tea terminal client connecting to the running daemon
 - **Telegram**: Notifications when Claude Code has questions; reply to answer
 - **Rate limit handling**: Detects rate limits, saves checkpoint, retries after 5h
 - **YOLO failover**: Optionally switch agent (Claude→Codex) on rate limit
@@ -82,6 +78,8 @@ Agents communicate with Kodama via structured prefixes in stdout:
 | `KODAMA_DECISION:` | Architectural decision (updates kodama.md) |
 | `KODAMA_BLOCKED:` | Cannot proceed |
 
+All agents must emit the protocol lines for reliable status detection. Codex runs in full-auto mode, so any questions will be handled by stopping the run and resuming via injected context (no session resume).
+
 ## Architecture
 
 ```
@@ -94,7 +92,6 @@ kodama/
 │   ├── daemon/          # task queue processing, rate limits
 │   ├── telegram/        # bot notifications + question answering
 │   ├── web/             # HTTP server, WebSocket, HTML templates
-│   └── tui/             # Bubble Tea TUI client
 └── tests/mocks/         # mock agent binaries for testing
 ```
 

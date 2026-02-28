@@ -27,19 +27,21 @@ type Project struct {
 
 // Task represents a backlog item to be processed.
 type Task struct {
-	ID           int64
-	ProjectID    int64
-	Description  string
-	Status       TaskStatus
-	Agent        string // overrides project default if set
-	Priority     int
-	CreatedAt    time.Time
-	StartedAt    *time.Time
-	CompletedAt  *time.Time
-	SessionID    string
-	CostUSD      float64
-	InputTokens  int64
-	OutputTokens int64
+	ID             int64
+	ProjectID      int64
+	Description    string
+	Status         TaskStatus
+	Agent          string // overrides project default if set
+	Priority       int
+	CreatedAt      time.Time
+	StartedAt      *time.Time
+	CompletedAt    *time.Time
+	SessionID      string
+	CostUSD        float64
+	InputTokens    int64
+	OutputTokens   int64
+	ResumeQuestion string
+	ResumeAnswer   string
 }
 
 // TaskLog represents a streamed output chunk from an agent.
