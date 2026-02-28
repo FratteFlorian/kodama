@@ -159,11 +159,10 @@ func TestListPendingTasks(t *testing.T) {
 
 	pending, err := db.ListPendingTasks(p.ID)
 	require.NoError(t, err)
-	// t1 (pending) and t3 (rate_limited) — t2 is done
-	assert.Len(t, pending, 2)
-	ids := []int64{pending[0].ID, pending[1].ID}
+	// only t1 is pending — t2 is done, t3 is rate_limited
+	assert.Len(t, pending, 1)
+	ids := []int64{pending[0].ID}
 	assert.Contains(t, ids, t1.ID)
-	assert.Contains(t, ids, t3.ID)
 }
 
 func TestCascadeDelete(t *testing.T) {

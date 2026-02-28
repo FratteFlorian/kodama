@@ -53,10 +53,13 @@ type Daemon struct {
 	projectsMu sync.Mutex
 
 	tgMu     sync.Mutex
-	tgBot    *telegram.Bot
+	tgBot    telegramClient
 	tgCancel context.CancelFunc
 	tgToken  string
 	tgUserID int64
+
+	agentFactory    func(task *db.Task, proj *db.Project) (agent.Agent, string)
+	telegramFactory func(token string, userID int64) (telegramClient, error)
 }
 
 // New creates a new Daemon.
@@ -71,6 +74,12 @@ func New(cfg *config.Config, database *db.DB, hub Broadcaster, envHub Broadcaste
 	}
 }
 
+type telegramClient interface {
+	Notifier
+	QuestionAnswerer
+	Start(ctx context.Context)
+}
+
 // SetNotifier sets the notification backend (Telegram bot).
 func (d *Daemon) SetNotifier(n Notifier) {
 	d.notifier = n
@@ -81,10 +90,21 @@ func (d *Daemon) SetQuestionAnswerer(qa QuestionAnswerer) {
 	d.qa = qa
 }
 
+// SetAgentFactory sets a custom agent factory (used in tests).
+func (d *Daemon) SetAgentFactory(factory func(task *db.Task, proj *db.Project) (agent.Agent, string)) {
+	d.agentFactory = factory
+}
+
 // UpdateTelegramSettings configures the Telegram bot without restarting the daemon.
 func (d *Daemon) UpdateTelegramSettings(token string, userID int64) error {
 	d.tgMu.Lock()
 	defer d.tgMu.Unlock()
+
+	if d.telegramFactory == nil {
+		d.telegramFactory = func(token string, userID int64) (telegramClient, error) {
+			return telegram.New(token, userID)
+		}
+	}
 
 	if token == "" || userID == 0 {
 		if d.tgCancel != nil {
@@ -108,7 +128,7 @@ func (d *Daemon) UpdateTelegramSettings(token string, userID int64) error {
 		d.tgCancel()
 	}
 
-	bot, err := telegram.New(token, userID)
+	bot, err := d.telegramFactory(token, userID)
 	if err != nil {
 		return fmt.Errorf("init telegram bot: %w", err)
 	}
@@ -237,6 +257,9 @@ func (d *Daemon) sendNotification(msg string) {
 
 // newAgent creates an agent for a task, respecting project config and Docker.
 func (d *Daemon) newAgent(task *db.Task, proj *db.Project) (agent.Agent, string) {
+	if d.agentFactory != nil {
+		return d.agentFactory(task, proj)
+	}
 	agentName := task.Agent
 	if agentName == "" {
 		agentName = proj.Agent

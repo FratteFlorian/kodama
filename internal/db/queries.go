@@ -107,7 +107,7 @@ func (db *DB) ListPendingTasks(projectID int64) ([]*Task, error) {
 	rows, err := db.sql.Query(
 		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at,
 		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer, failover
-		 FROM tasks WHERE project_id = ? AND status IN ('pending', 'rate_limited')
+		 FROM tasks WHERE project_id = ? AND status = 'pending'
 		 ORDER BY priority ASC, created_at ASC`,
 		projectID,
 	)
