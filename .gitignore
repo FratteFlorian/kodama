@@ -3,6 +3,8 @@ kodama
 
 # Data directory
 data/
+.gocache/
+internal/web/uploads/
 
 # Mock binaries (built by make mock-binaries)
 tests/mocks/claude/claude
