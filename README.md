@@ -4,6 +4,12 @@ A self-hosted autonomous coding daemon that wraps Claude Code and Codex as subpr
 
 Named after the Japanese forest spirit that quietly works in the background.
 
+## Security Warning
+
+Kodama has no built-in authentication. It is designed to run on localhost, a trusted local network, or behind a secure tunnel (for example Tailscale/VPN).
+
+If you expose the Web UI to the public internet without access controls, anyone with access could trigger tasks that execute code via the integrated agents.
+
 ## Why Kodama?
 
 I built this to scratch my own itch: a self-hosted daemon that can run coding tasks asynchronously while I do other work. Kodama is the result of that.
@@ -31,9 +37,15 @@ On first start, complete the setup page in the browser (Telegram can be left emp
 
 ## Prerequisites
 
-- `codex` CLI installed and authenticated (default agent)
-- `claude` CLI installed and authenticated (optional, required if using Claude tasks)
+- `codex` CLI installed and authenticated (default agent; typically via subscription)
+- `claude` CLI installed and authenticated (optional for Claude-based tasks; typically via subscription)
 - Docker (optional, required for projects using `docker` command runtime)
+
+Cost note:
+
+- Kodama wraps official CLIs as subprocesses.
+- In most setups it uses your existing CLI subscription/billing model.
+- No direct Kodama API usage costs apply unless your CLI provider charges per call.
 
 ## Runtime Model
 
