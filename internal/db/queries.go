@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -253,6 +254,62 @@ func (db *DB) GetFullLog(taskID int64) (string, error) {
 		full += chunk
 	}
 	return full, rows.Err()
+}
+
+// GetLogTail returns the last maxLines lines from a task log.
+func (db *DB) GetLogTail(taskID int64, maxLines int) (string, error) {
+	if maxLines <= 0 {
+		return "", nil
+	}
+	rows, err := db.sql.Query(
+		`SELECT chunk FROM task_logs WHERE task_id = ? ORDER BY id DESC`, taskID,
+	)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	chunks := make([]string, 0, 64)
+	lineCount := 0
+	for rows.Next() {
+		var chunk string
+		if err := rows.Scan(&chunk); err != nil {
+			return "", err
+		}
+		chunks = append(chunks, chunk)
+		lineCount += strings.Count(chunk, "\n")
+		// Read a small safety buffer above maxLines to handle large chunk boundaries.
+		if lineCount >= maxLines+32 {
+			break
+		}
+	}
+
+	var b strings.Builder
+	for i := len(chunks) - 1; i >= 0; i-- {
+		b.WriteString(chunks[i])
+	}
+	return tailLines(b.String(), maxLines), rows.Err()
+}
+
+func tailLines(s string, maxLines int) string {
+	if maxLines <= 0 || s == "" {
+		return ""
+	}
+	parts := strings.Split(s, "\n")
+	hasTrailingNewline := false
+	if len(parts) > 0 && parts[len(parts)-1] == "" {
+		hasTrailingNewline = true
+		parts = parts[:len(parts)-1]
+	}
+	if len(parts) <= maxLines {
+		return s
+	}
+	parts = parts[len(parts)-maxLines:]
+	out := strings.Join(parts, "\n")
+	if hasTrailingNewline {
+		out += "\n"
+	}
+	return out
 }
 
 func (db *DB) GetTaskLogs(taskID int64) ([]*TaskLog, error) {

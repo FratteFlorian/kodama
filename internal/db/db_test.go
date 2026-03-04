@@ -1,8 +1,10 @@
 package db
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,6 +121,24 @@ func TestTaskLogs(t *testing.T) {
 	logs, err := db.GetTaskLogs(task.ID)
 	require.NoError(t, err)
 	assert.Len(t, logs, 2)
+}
+
+func TestGetLogTail(t *testing.T) {
+	db := openTestDB(t)
+
+	p, _ := db.CreateProject("proj", "/repo", "", "claude", false)
+	task, _ := db.CreateTask(p.ID, "task", "", 0, false)
+
+	for i := 1; i <= 260; i++ {
+		require.NoError(t, db.AppendTaskLog(task.ID, fmt.Sprintf("line %d\n", i)))
+	}
+
+	tail, err := db.GetLogTail(task.ID, 200)
+	require.NoError(t, err)
+	assert.NotContains(t, tail, "line 60\n")
+	assert.Contains(t, tail, "line 61\n")
+	assert.Contains(t, tail, "line 260\n")
+	assert.Equal(t, 200, strings.Count(tail, "\n"))
 }
 
 func TestCheckpoints(t *testing.T) {

@@ -23,6 +23,7 @@ import (
 )
 
 const maxPreviewBytes = 512 * 1024
+const taskLogTailLines = 200
 
 type fileBrowserEntry struct {
 	Name      string
@@ -739,7 +740,7 @@ func (s *Server) renderTaskPage(w http.ResponseWriter, taskID int64, answerError
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	logContent, _ := s.db.GetFullLog(taskID)
+	logContent, _ := s.db.GetLogTail(taskID, taskLogTailLines)
 	proj, _ := s.db.GetProject(task.ProjectID)
 	taskAttachments, _ := s.db.ListTaskAttachments(taskID)
 	projectAttachments, _ := s.db.ListProjectAttachments(task.ProjectID)
@@ -824,7 +825,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	slog.Debug("websocket connected", "task_id", taskID, "remote", r.RemoteAddr)
 
 	// Send existing log as initial content.
-	logContent, _ := s.db.GetFullLog(taskID)
+	logContent, _ := s.db.GetLogTail(taskID, taskLogTailLines)
 	if logContent != "" {
 		conn.WriteMessage(websocket.TextMessage, []byte(logContent))
 	}
@@ -1121,6 +1122,7 @@ func (s *Server) apiUpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
+		Description *string `json:"description"`
 		Agent    string  `json:"agent"`
 		Profile  *string `json:"profile"`
 		Priority *int    `json:"priority"`
@@ -1129,6 +1131,9 @@ func (s *Server) apiUpdateTask(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	if req.Description != nil {
+		s.db.UpdateTaskDescription(taskID, *req.Description)
 	}
 	if req.Agent != "" {
 		s.db.UpdateTaskAgent(taskID, req.Agent)

@@ -37,22 +37,42 @@
         return null;
     }
 
-    function escape(s) {
-        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const MAX_RENDERED_LINES = 4000;
+
+    function lineToNode(line) {
+        const span = document.createElement('span');
+        const cls = classifyLine(line);
+        if (cls) span.className = cls;
+        span.textContent = line + '\n';
+        return span;
     }
 
-    // Render a block of text into HTML, one <span> per line.
-    function renderText(text) {
+    function splitCompleteLines(text) {
         const lines = text.split('\n');
-        let html = '';
-        for (let i = 0; i < lines.length; i++) {
-            // Skip the empty string produced by a trailing newline.
-            if (i === lines.length - 1 && lines[i] === '') continue;
-            const cls = classifyLine(lines[i]);
-            const e = escape(lines[i]);
-            html += cls ? `<span class="${cls}">${e}</span>\n` : e + '\n';
+        if (lines.length > 0 && lines[lines.length - 1] === '') {
+            lines.pop();
         }
-        return html;
+        return lines;
+    }
+
+    function appendLines(el, container, lines) {
+        if (!lines || lines.length === 0) return;
+
+        const stickToBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 24;
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < lines.length; i++) {
+            frag.appendChild(lineToNode(lines[i]));
+        }
+        el.appendChild(frag);
+
+        // Keep DOM size bounded for responsiveness.
+        while (el.childElementCount > MAX_RENDERED_LINES) {
+            el.removeChild(el.firstElementChild);
+        }
+
+        if (stickToBottom) {
+            container.scrollTop = container.scrollHeight;
+        }
     }
 
     // colorizeOutput initialises a <pre> element with colorized content and
@@ -63,10 +83,25 @@
     //   onClose   — optional callback when the socket closes
     window.colorizeOutput = function(el, wsURL, onClose) {
         const container = el.parentElement;
+        let queuedLines = [];
+        let flushScheduled = false;
+
+        function scheduleFlush() {
+            if (flushScheduled) return;
+            flushScheduled = true;
+            requestAnimationFrame(function() {
+                flushScheduled = false;
+                if (queuedLines.length === 0) return;
+                appendLines(el, container, queuedLines);
+                queuedLines = [];
+            });
+        }
 
         // Colorize any content already in the element (e.g. loaded from DB).
         if (el.textContent) {
-            el.innerHTML = renderText(el.textContent);
+            const initial = splitCompleteLines(el.textContent);
+            el.textContent = '';
+            appendLines(el, container, initial);
         }
 
         if (!wsURL) return;
@@ -79,17 +114,22 @@
             // Render all complete lines; keep the last partial line in buf.
             const cut = buf.lastIndexOf('\n');
             if (cut >= 0) {
-                el.innerHTML += renderText(buf.substring(0, cut + 1));
+                const complete = buf.substring(0, cut + 1);
+                const lines = splitCompleteLines(complete);
+                if (lines.length > 0) {
+                    queuedLines.push.apply(queuedLines, lines);
+                    scheduleFlush();
+                }
                 buf = buf.substring(cut + 1);
             }
-            container.scrollTop = container.scrollHeight;
         };
 
         ws.onclose = function() {
             // Flush any remaining partial line.
             if (buf) {
-                el.innerHTML += renderText(buf);
+                queuedLines.push(buf);
                 buf = '';
+                scheduleFlush();
             }
             if (onClose) onClose();
         };
