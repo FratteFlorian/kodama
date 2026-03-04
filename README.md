@@ -1,5 +1,9 @@
 # Kodama
 
+> [!WARNING]
+> **Work in Progress (WIP):** Kodama is under active development. APIs, behavior, and data models may change without notice.
+> Not recommended for production use yet.
+
 A self-hosted autonomous coding daemon that wraps Claude Code and Codex as subprocesses, managing async task execution via a web UI.
 
 Named after the Japanese forest spirit that quietly works in the background.
