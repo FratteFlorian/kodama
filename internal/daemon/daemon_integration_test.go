@@ -215,6 +215,37 @@ func TestAnswerQuestionAfterRestartResumesTask(t *testing.T) {
 	require.Contains(t, prompt, "Answer to")
 }
 
+func TestAnswerQuestionReplacesStaleBufferedChannelValue(t *testing.T) {
+	database, err := db.Open(t.TempDir())
+	require.NoError(t, err)
+	defer database.Close()
+
+	cfg := &config.Config{QuestionTimeout: 2 * time.Second}
+	d := New(cfg, database, nil, nil)
+
+	proj, err := database.CreateProject("p", "/tmp", "", "codex", false)
+	require.NoError(t, err)
+	task, err := database.CreateTask(proj.ID, "do work", "", 0, false)
+	require.NoError(t, err)
+	require.NoError(t, database.UpdateTaskStatus(task.ID, db.TaskStatusWaiting))
+	require.NoError(t, database.UpdateTaskResume(task.ID, "choose db", ""))
+
+	// Simulate a stale/full in-memory question channel.
+	ch := d.registerQuestion(task.ID)
+	ch <- "already queued"
+	defer d.unregisterQuestion(task.ID)
+
+	require.NoError(t, d.AnswerQuestion(task.ID, "Use SQLite."))
+
+	received := <-ch
+	require.Equal(t, "Use SQLite.", received)
+
+	got, err := database.GetTask(task.ID)
+	require.NoError(t, err)
+	require.Equal(t, db.TaskStatusWaiting, got.Status)
+	require.Equal(t, "", got.ResumeAnswer)
+}
+
 func TestWaitingReminderSendsEscalation(t *testing.T) {
 	database, err := db.Open(t.TempDir())
 	require.NoError(t, err)

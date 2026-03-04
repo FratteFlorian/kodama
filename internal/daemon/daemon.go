@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/florian/kodama/internal/agent"
 	"github.com/florian/kodama/internal/config"
@@ -279,11 +280,16 @@ func (d *Daemon) AnswerQuestion(taskID int64, answer string) error {
 	d.questionsMu.Unlock()
 
 	if ok {
+		// If a stale value is buffered, drop it and prefer the latest user answer.
+		select {
+		case <-ch:
+		default:
+		}
 		select {
 		case ch <- answer:
 			return nil
-		default:
-			return fmt.Errorf("question channel for task %d is not ready", taskID)
+		case <-time.After(2 * time.Second):
+			slog.Warn("question channel send timed out, falling back to persisted resume", "task_id", taskID)
 		}
 	}
 

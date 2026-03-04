@@ -8,7 +8,7 @@
             <a href="/projects/{{.Project.ID}}" class="back-link">← {{.Project.Name}}</a>
             {{end}}
             <h1>Task #{{.Task.ID}}</h1>
-            <span class="badge status-{{statusBadge .Task.Status}}">{{.Task.Status}}</span>
+            <span id="task-status-badge" class="badge status-{{statusBadge .Task.Status}}">{{.Task.Status}}</span>
         </div>
     </div>
 
@@ -41,8 +41,7 @@
         </div>
     </div>
 
-    {{if eq .Task.Status "waiting"}}
-    <section class="answer-form">
+    <section id="answer-form-section" class="answer-form" {{if ne .Task.Status "waiting"}}style="display:none"{{end}}>
         <h2>Agent is waiting for input</h2>
         {{if .AnswerError}}
         <p class="form-error">{{.AnswerError}}</p>
@@ -55,11 +54,10 @@
             <button type="submit" class="btn btn-primary">Send Answer</button>
         </form>
     </section>
-    {{end}}
 
     <section class="task-output">
         <h2>Output
-            {{if eq .Task.Status "running"}}<span class="running-indicator" title="Claude is processing — output appears when done">⏳ working…</span>{{end}}
+            <span id="running-indicator" class="running-indicator" title="Agent is processing — output appears when done" {{if ne .Task.Status "running"}}style="display:none"{{end}}>⏳ working…</span>
         </h2>
         <div id="output-container" class="output-box">
             <pre id="output">{{.Log}}</pre>
@@ -105,27 +103,48 @@
 <script>
 (function() {
     const taskID = {{.Task.ID}};
-    const status = "{{.Task.Status}}";
+    let currentStatus = "{{.Task.Status}}";
     const output = document.getElementById('output');
+    const badge = document.getElementById('task-status-badge');
+    const waitingSection = document.getElementById('answer-form-section');
+    const runningIndicator = document.getElementById('running-indicator');
 
-    const live = status === 'running' || status === 'waiting' || status === 'pending';
+    function isLive(status) {
+        return status === 'running' || status === 'waiting' || status === 'pending';
+    }
+
+    function badgeStatusClass(status) {
+        return status === 'rate_limited' ? 'rate-limited' : status;
+    }
+
+    function applyStatus(status) {
+        if (!status || status === currentStatus) return;
+        currentStatus = status;
+        if (badge) {
+            badge.className = 'badge status-' + badgeStatusClass(status);
+            badge.textContent = status;
+        }
+        if (waitingSection) {
+            waitingSection.style.display = status === 'waiting' ? '' : 'none';
+        }
+        if (runningIndicator) {
+            runningIndicator.style.display = status === 'running' ? '' : 'none';
+        }
+    }
+
+    const live = isLive(currentStatus);
     const wsURL = live ? 'ws://' + window.location.host + '/ws/tasks/' + taskID : null;
 
-    colorizeOutput(output, wsURL, function() {
-        // Reload on close to show final status badge.
-        setTimeout(function() { window.location.reload(); }, 1000);
-    });
+    colorizeOutput(output, wsURL);
 
-    // Poll for status changes if waiting for input.
-    if (status === 'waiting') {
-        setInterval(function() {
-            fetch('/api/tasks/' + taskID)
-                .then(function(r) { return r.json(); })
-                .then(function(task) {
-                    if (task.Status !== 'waiting') window.location.reload();
-                });
-        }, 2000);
-    }
+    // Poll and update live status/UI without full-page reload.
+    setInterval(function() {
+        fetch('/api/tasks/' + taskID)
+            .then(function(r) { return r.json(); })
+            .then(function(task) {
+                applyStatus(task.Status);
+            });
+    }, 2000);
 })();
 </script>
 {{end}}
