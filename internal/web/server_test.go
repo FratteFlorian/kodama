@@ -165,6 +165,24 @@ func TestAPIUpdateTaskProfileCanClear(t *testing.T) {
 	assert.Equal(t, "", got.Profile)
 }
 
+func TestAPIUpdateTaskDescription(t *testing.T) {
+	srv, database := newTestServer(t)
+
+	proj, _ := database.CreateProject("p", "/tmp", "", "claude", false)
+	task, _ := database.CreateTask(proj.ID, "old desc", "", 0, false)
+
+	body := `{"description":"new description"}`
+	req := httptest.NewRequest(http.MethodPut, "/api/tasks/"+itoa(task.ID), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	got, err := database.GetTask(task.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "new description", got.Description)
+}
+
 func TestCreateProjectHTMLRedirects(t *testing.T) {
 	srv, _ := newTestServer(t)
 
