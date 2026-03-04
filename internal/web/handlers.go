@@ -184,6 +184,7 @@ func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
 	}
 	env, _ := s.db.GetEnvironment(proj.ID) // nil if not configured yet
 	projectAttachments, _ := s.db.ListProjectAttachments(proj.ID)
+	nextPriority, _ := s.db.NextTaskPriority(proj.ID)
 	s.renderTemplate(w, "project.html", map[string]any{
 		"Project":      proj,
 		"Tasks":        tasks,
@@ -191,6 +192,7 @@ func (s *Server) handleProject(w http.ResponseWriter, r *http.Request) {
 		"IsRunning":    s.daemon != nil && s.daemon.IsRunning(proj.ID),
 		"Env":          env,
 		"IsEnvRunning": s.daemon != nil && s.daemon.IsEnvRunning(proj.ID),
+		"NextPriority": nextPriority,
 		"TotalCost":    totalCost,
 		"Msg":          r.URL.Query().Get("msg"),
 	})
@@ -406,7 +408,16 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	desc := r.FormValue("description")
 	agent := r.FormValue("agent")
 	profile := normalizeTaskProfile(r.FormValue("profile"))
-	priority, _ := strconv.Atoi(r.FormValue("priority"))
+	priority, err := s.db.NextTaskPriority(proj.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if pStr := strings.TrimSpace(r.FormValue("priority")); pStr != "" {
+		if p, err := strconv.Atoi(pStr); err == nil {
+			priority = p
+		}
+	}
 	failover := r.FormValue("failover") == "on"
 	if r.MultipartForm != nil {
 		if err := validateAttachments(r.MultipartForm.File["attachments"]); err != nil {

@@ -58,7 +58,7 @@
                 <div class="task-item">
                     <div class="task-info">
                         <span class="task-status badge status-{{statusBadge .Status}}" data-task-status-id="{{.ID}}">{{.Status}}</span>
-                        <a href="/tasks/{{.ID}}" class="task-desc">{{.Description}}</a>
+                        <a href="/tasks/{{.ID}}" class="task-desc" data-task-desc-id="{{.ID}}">{{.Description}}</a>
                         <span class="task-cost">
                             {{if or .InputTokens .OutputTokens}}
                                 {{formatTokens .InputTokens}} in / {{formatTokens .OutputTokens}} out
@@ -97,12 +97,21 @@
                             <button type="submit" class="btn btn-sm">Retry</button>
                         </form>
                         {{end}}
+                        <button type="button" class="btn btn-sm" onclick="toggleTaskEdit({{.ID}}, true)">Edit</button>
                         <form method="POST" action="/projects/{{$.Project.ID}}/tasks/{{.ID}}/delete" style="display:inline"
                               onsubmit="return confirm('Delete this task?')">
                             <button type="submit" class="btn btn-sm btn-danger">✕</button>
                         </form>
                     </div>
                 </div>
+                <form class="task-edit-form" data-task-edit-form-id="{{.ID}}" style="display:none; margin:.35rem 0 .8rem 0;"
+                      onsubmit="return saveTaskEdit(event, this)">
+                    <div class="form-group" style="margin-bottom:.45rem;">
+                        <textarea name="description" rows="4" required>{{.Description}}</textarea>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                    <button type="button" class="btn btn-sm" onclick="toggleTaskEdit({{.ID}}, false)">Cancel</button>
+                </form>
                 {{end}}
             </div>
         {{else}}
@@ -187,7 +196,7 @@
                 </div>
                 <div class="form-group">
                     <label for="priority">Priority</label>
-                    <input type="number" id="priority" name="priority" value="0" min="0">
+                    <input type="number" id="priority" name="priority" value="{{.NextPriority}}" min="0">
                 </div>
                 <div class="form-group">
                     <label>Failover</label>
@@ -252,6 +261,49 @@ if (flash) setTimeout(function() {
 function statusClass(status) {
     if (status === 'rate_limited') return 'rate-limited';
     return status || 'pending';
+}
+
+function toggleTaskEdit(taskID, show) {
+    var form = document.querySelector('[data-task-edit-form-id="' + taskID + '"]');
+    if (!form) return;
+    form.style.display = show ? 'block' : 'none';
+    if (show) {
+        var ta = form.querySelector('textarea[name="description"]');
+        if (ta) ta.focus();
+    }
+}
+
+function saveTaskEdit(event, form) {
+    event.preventDefault();
+    var taskID = form.getAttribute('data-task-edit-form-id');
+    var ta = form.querySelector('textarea[name="description"]');
+    if (!taskID || !ta) return false;
+    var description = ta.value.trim();
+    if (!description) {
+        alert('Description cannot be empty.');
+        ta.focus();
+        return false;
+    }
+    fetch('/api/tasks/' + taskID, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: description })
+    })
+    .then(function(r) {
+        if (!r.ok) throw new Error('Failed to update task.');
+        return r.json();
+    })
+    .then(function(task) {
+        var desc = document.querySelector('[data-task-desc-id="' + taskID + '"]');
+        if (desc && task && task.Description) {
+            desc.textContent = task.Description;
+        }
+        toggleTaskEdit(taskID, false);
+    })
+    .catch(function(err) {
+        alert(err.message || 'Failed to update task.');
+    });
+    return false;
 }
 
 // Keep task status badges updated without full-page reload.
