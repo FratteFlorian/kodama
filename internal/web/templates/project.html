@@ -28,6 +28,9 @@
         {{if eq .Msg "no_tasks"}}No pending tasks in the backlog. Add a task below, then click Start.
         {{else if eq .Msg "started"}}Started processing backlog.
         {{else if eq .Msg "already_running"}}Project is already running.
+        {{else if eq .Msg "docker_recreated"}}Docker scaffold recreated (Dockerfile, docker-compose.yml, .dockerignore).
+        {{else if eq .Msg "docker_recreate_missing_repo"}}Project has no repository path configured.
+        {{else if eq .Msg "docker_recreate_failed"}}Failed to recreate Docker scaffold. Check logs and filesystem permissions.
         {{end}}
     </div>
     {{end}}
@@ -43,6 +46,12 @@
             <span class="env-config-label">{{.Env.Type}}: {{.Env.ConfigPath}}</span>
             <div class="env-controls">
                 <a href="/projects/{{.Project.ID}}/environment" class="btn btn-sm">→ Logs</a>
+                {{if .Project.RepoPath}}
+                <form method="POST" action="/projects/{{.Project.ID}}/docker/recreate" style="display:inline"
+                      onsubmit="return confirm('Recreate Dockerfile, docker-compose.yml, and .dockerignore? Existing files will be overwritten.');">
+                    <button type="submit" class="btn btn-sm">Recreate Docker Files</button>
+                </form>
+                {{end}}
             </div>
         </div>
         {{end}}

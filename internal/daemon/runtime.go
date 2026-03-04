@@ -123,6 +123,15 @@ func (d *Daemon) stopProjectRuntime(projectID int64) {
 }
 
 func ensureDockerScaffold(repoPath string) (string, error) {
+	return writeDockerScaffold(repoPath, false)
+}
+
+// RecreateDockerScaffold force-regenerates Docker scaffold files for a repository.
+func RecreateDockerScaffold(repoPath string) (string, error) {
+	return writeDockerScaffold(repoPath, true)
+}
+
+func writeDockerScaffold(repoPath string, overwrite bool) (string, error) {
 	if err := os.MkdirAll(repoPath, 0755); err != nil {
 		return "", fmt.Errorf("ensure repo path: %w", err)
 	}
@@ -133,25 +142,30 @@ func ensureDockerScaffold(repoPath string) (string, error) {
 
 	stack := detectDockerStack(repoPath)
 
-	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
+	if overwrite || fileMissing(dockerfilePath) {
 		if err := os.WriteFile(dockerfilePath, []byte(renderDockerfile(stack)), 0644); err != nil {
 			return "", fmt.Errorf("write Dockerfile: %w", err)
 		}
 	}
 
-	if _, err := os.Stat(composePath); os.IsNotExist(err) {
+	if overwrite || fileMissing(composePath) {
 		if err := os.WriteFile(composePath, []byte(renderComposeFile()), 0644); err != nil {
 			return "", fmt.Errorf("write docker-compose.yml: %w", err)
 		}
 	}
 
-	if _, err := os.Stat(dockerIgnorePath); os.IsNotExist(err) {
+	if overwrite || fileMissing(dockerIgnorePath) {
 		if err := os.WriteFile(dockerIgnorePath, []byte(renderDockerIgnore()), 0644); err != nil {
 			return "", fmt.Errorf("write .dockerignore: %w", err)
 		}
 	}
 
 	return "docker-compose.yml", nil
+}
+
+func fileMissing(path string) bool {
+	_, err := os.Stat(path)
+	return os.IsNotExist(err)
 }
 
 func detectDockerStack(repoPath string) dockerStack {
@@ -269,13 +283,21 @@ CMD ["tail", "-f", "/dev/null"]
 WORKDIR /workspace
 
 COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* .npmrc* ./
-RUN if [ -f package-lock.json ]; then npm ci; \
+COPY . .
+
+RUN if [ -f package-lock.json ]; then \
+      find . -name package.json -not -path "./node_modules/*" -exec sed -i 's/"workspace:[^"]*"/"*"/g' {} +; \
+      if grep -q '"workspaces"' package.json; then \
+        npm ci --workspaces --include-workspace-root || npm install --workspaces --include-workspace-root; \
+      else \
+        npm ci; \
+      fi; \
     elif [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile; \
     elif [ -f yarn.lock ]; then corepack enable && yarn install --frozen-lockfile; \
-    elif [ -f package.json ]; then npm install; \
+    elif [ -f package.json ]; then \
+      find . -name package.json -not -path "./node_modules/*" -exec sed -i 's/"workspace:[^"]*"/"*"/g' {} +; \
+      if grep -q '"workspaces"' package.json; then npm install --workspaces --include-workspace-root; else npm install; fi; \
     fi
-
-COPY . .
 
 CMD ["tail", "-f", "/dev/null"]
 `

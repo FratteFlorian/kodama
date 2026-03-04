@@ -45,6 +45,22 @@ func TestEnsureDockerScaffold_Node(t *testing.T) {
 	assert.Contains(t, string(df), "npm ci")
 }
 
+func TestEnsureDockerScaffold_NodeWorkspaceAwareInstall(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "package.json"), []byte("{\"workspaces\":[\"apps/*\"]}\n"), 0644))
+
+	_, err := ensureDockerScaffold(dir)
+	require.NoError(t, err)
+
+	df, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
+	require.NoError(t, err)
+	assert.Contains(t, string(df), `grep -q '"workspaces"' package.json`)
+	assert.Contains(t, string(df), `sed -i 's/"workspace:[^"]*"/"*"/g'`)
+	assert.Contains(t, string(df), "npm install --workspaces --include-workspace-root")
+	assert.Contains(t, string(df), "npm ci --workspaces --include-workspace-root")
+	assert.Contains(t, string(df), "|| npm install --workspaces --include-workspace-root")
+}
+
 func TestEnsureDockerScaffold_Python(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("pytest\n"), 0644))
@@ -109,4 +125,28 @@ func TestEnsureDockerScaffold_DoesNotOverwriteExistingDockerfile(t *testing.T) {
 	df, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
 	require.NoError(t, err)
 	assert.Equal(t, "FROM alpine:3.20\n", string(df))
+}
+
+func TestRecreateDockerScaffold_OverwritesExistingDockerFiles(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module x\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM alpine:3.20\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("services: {}\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".dockerignore"), []byte(".git\n"), 0644))
+
+	_, err := RecreateDockerScaffold(dir)
+	require.NoError(t, err)
+
+	df, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
+	require.NoError(t, err)
+	assert.Contains(t, string(df), "FROM golang:1.22-bookworm")
+	assert.NotContains(t, string(df), "FROM alpine:3.20")
+
+	compose, err := os.ReadFile(filepath.Join(dir, "docker-compose.yml"))
+	require.NoError(t, err)
+	assert.Contains(t, string(compose), "command: tail -f /dev/null")
+
+	ignore, err := os.ReadFile(filepath.Join(dir, ".dockerignore"))
+	require.NoError(t, err)
+	assert.Contains(t, string(ignore), "node_modules")
 }

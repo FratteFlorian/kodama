@@ -110,6 +110,7 @@ func (s *Server) buildRouter() chi.Router {
 	r.Put("/projects/{id}/tasks/{tid}", s.handleUpdateTask)
 	r.Delete("/projects/{id}/tasks/{tid}", s.handleDeleteTask)
 	r.Post("/projects/{id}/settings", s.handleUpdateProjectSettings)
+	r.Post("/projects/{id}/docker/recreate", s.handleRecreateDockerFiles)
 	r.Post("/projects/{id}/start", s.handleStartProject)
 	r.Post("/projects/{id}/stop", s.handleStopProject)
 	r.Get("/tasks/{id}", s.handleTask)

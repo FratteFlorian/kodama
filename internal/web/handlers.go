@@ -716,6 +716,27 @@ func (s *Server) handleStopProject(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/projects/%d", proj.ID), http.StatusSeeOther)
 }
 
+func (s *Server) handleRecreateDockerFiles(w http.ResponseWriter, r *http.Request) {
+	proj, err := s.getProject(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if strings.TrimSpace(proj.RepoPath) == "" {
+		http.Redirect(w, r, fmt.Sprintf("/projects/%d?msg=docker_recreate_missing_repo", proj.ID), http.StatusSeeOther)
+		return
+	}
+
+	if _, err := daemon.RecreateDockerScaffold(proj.RepoPath); err != nil {
+		slog.Warn("recreate docker scaffold failed", "project_id", proj.ID, "repo_path", proj.RepoPath, "err", err)
+		http.Redirect(w, r, fmt.Sprintf("/projects/%d?msg=docker_recreate_failed", proj.ID), http.StatusSeeOther)
+		return
+	}
+
+	slog.Info("docker scaffold recreated", "project_id", proj.ID, "repo_path", proj.RepoPath)
+	http.Redirect(w, r, fmt.Sprintf("/projects/%d?msg=docker_recreated", proj.ID), http.StatusSeeOther)
+}
+
 func (s *Server) handleTask(w http.ResponseWriter, r *http.Request) {
 	taskID, err := getIDParam(r, "id")
 	if err != nil {
@@ -1134,10 +1155,10 @@ func (s *Server) apiUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		Description *string `json:"description"`
-		Agent    string  `json:"agent"`
-		Profile  *string `json:"profile"`
-		Priority *int    `json:"priority"`
-		Failover *bool   `json:"failover"`
+		Agent       string  `json:"agent"`
+		Profile     *string `json:"profile"`
+		Priority    *int    `json:"priority"`
+		Failover    *bool   `json:"failover"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, err.Error(), http.StatusBadRequest)
