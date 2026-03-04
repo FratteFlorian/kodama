@@ -57,7 +57,7 @@
                 {{range .Tasks}}
                 <div class="task-item">
                     <div class="task-info">
-                        <span class="task-status badge status-{{statusBadge .Status}}">{{.Status}}</span>
+                        <span class="task-status badge status-{{statusBadge .Status}}" data-task-status-id="{{.ID}}">{{.Status}}</span>
                         <a href="/tasks/{{.ID}}" class="task-desc">{{.Description}}</a>
                         <span class="task-cost">
                             {{if or .InputTokens .OutputTokens}}
@@ -249,9 +249,24 @@ if (flash) setTimeout(function() {
     setTimeout(function() { flash.style.display = 'none'; }, 600);
 }, 4000);
 
-{{if .IsRunning}}
-// Auto-refresh every 3s while running — navigate to clean URL to drop the ?msg param.
-setTimeout(function() { window.location.href = window.location.pathname; }, 3000);
-{{end}}
+function statusClass(status) {
+    if (status === 'rate_limited') return 'rate-limited';
+    return status || 'pending';
+}
+
+// Keep task status badges updated without full-page reload.
+setInterval(function() {
+    fetch('/api/projects/{{.Project.ID}}/tasks')
+        .then(function(r) { return r.json(); })
+        .then(function(tasks) {
+            tasks.forEach(function(task) {
+                var el = document.querySelector('[data-task-status-id="' + task.ID + '"]');
+                if (!el) return;
+                el.className = 'task-status badge status-' + statusClass(task.Status);
+                el.textContent = task.Status;
+            });
+        })
+        .catch(function() {});
+}, 2000);
 </script>
 {{end}}
