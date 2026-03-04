@@ -8,24 +8,51 @@ Named after the Japanese forest spirit that quietly works in the background.
 
 I built this to scratch my own itch: a self-hosted daemon that can run coding tasks asynchronously while I do other work. Kodama is the result of that.
 
+## Installation
+
+```bash
+# From source
+git clone https://github.com/florian/kodama.git
+cd kodama
+make build
+```
+
+Binary output: `./kodama`
+
 ## Quick Start
 
 ```bash
 # Start daemon + web UI
-kodama
+./kodama
 ```
 
 Open http://localhost:8080 to access the web UI.
-On first start, complete the setup wizard in the browser.
+On first start, complete the setup page in the browser (Telegram can be left empty).
+
+## Prerequisites
+
+- `codex` CLI installed and authenticated (default agent)
+- `claude` CLI installed and authenticated (optional, required if using Claude tasks)
+- Docker (optional, required for projects using `docker` command runtime)
+
+## Runtime Model
+
+- Agents (`codex` / `claude`) always run on the host.
+- Project commands (build/test/lint/etc.) run either on `host` or `docker`, per project.
+- In `docker` mode, Kodama can scaffold missing `Dockerfile`/`docker-compose.yml` for the managed project repository.
 
 ## Features
 
 - **Web UI**: Project/backlog management, live task output streaming via WebSocket
 - **Telegram**: Notifications when Claude Code has questions; reply to answer
-- **Rate limit handling**: Detects rate limits, saves checkpoint, retries after 5h
+- **Rate limit handling**: Handles `KODAMA_RATELIMIT` signals, saves checkpoint, retries after 5h
 - **YOLO failover**: Optional per-task switch (Claude→Codex) on rate limit
-- **Docker environments**: Run agents inside project-specific containers
+- **Command runtime mode**: Keep agents on host, run build/test commands on host or in auto-managed Docker
 - **Multi-agent**: Per-task agent selection (Claude Code or Codex)
+- **Task profiles**: Per-task execution profile (Architect, Developer, QA, Refactorer, Incident, UX Reviewer)
+- **Input attachments**: Attach PDFs/images/files to project PRDs and tasks
+- **PRD task planning**: Generate backlog tasks from PRD context and auto-import structured plans
+- **Auto Docker scaffold**: Generates `Dockerfile` + `docker-compose.yml` when Docker runtime is enabled and files are missing
 
 ## Configuration
 
@@ -37,21 +64,33 @@ Environment variables:
 ```
 KODAMA_PORT
 KODAMA_DATA_DIR
+KODAMA_LOG
 KODAMA_QUESTION_TIMEOUT
+KODAMA_WAITING_REMINDER
 KODAMA_CLAUDE_BINARY
 KODAMA_DOCKER_SOCKET
 ```
 
-## Project Config (`kodama.yml`)
+Notes:
 
-Each managed project has a `kodama.yml` in its repo root:
+- `KODAMA_LOG`: set to `INFO` to reduce log verbosity (default is `DEBUG`).
+- `KODAMA_QUESTION_TIMEOUT` and `KODAMA_WAITING_REMINDER` are seconds.
+- Set `KODAMA_WAITING_REMINDER=0` to disable waiting reminders.
+
+## Project Bootstrap (`kodama.yml`)
+
+When creating a project with a repository path, Kodama writes a starter `kodama.yml` in the repo root (if missing):
 
 ```yaml
 name: My Project
 repo: github.com/user/myproject
-image: golang:1.22      # Docker image (optional)
-agent: codex            # default: codex
+image: ""
+agent: codex
+telegram:
+  notify: true
 ```
+
+`kodama.yml` is currently bootstrap metadata; active project settings are stored in Kodama's database and managed in the web UI.
 
 ## Communication Protocol
 
@@ -61,6 +100,7 @@ Agents communicate with Kodama via structured prefixes in stdout:
 |--------|---------|
 | `KODAMA_QUESTION:` | Needs user input |
 | `KODAMA_DONE:` | Task completed |
+| `KODAMA_RATELIMIT:` | Agent hit a rate limit |
 | `KODAMA_PR:` | PR URL follows |
 | `KODAMA_DECISION:` | Architectural decision (updates kodama.md) |
 | `KODAMA_BLOCKED:` | Cannot proceed |
@@ -113,7 +153,7 @@ All agents must emit the protocol lines for reliable status detection. Codex run
 kodama/
 ├── cmd/kodama/          # entrypoint
 ├── internal/
-│   ├── config/          # config loading (YAML + env)
+│   ├── config/          # config loading (defaults + env)
 │   ├── db/              # SQLite schema and queries
 │   ├── agent/           # Claude/Codex subprocess management
 │   ├── daemon/          # task queue processing, rate limits
@@ -133,17 +173,12 @@ make lint           # run golangci-lint
 
 ## Deployment
 
-```yaml
-services:
-  kodama:
-    image: kodama:latest
-    volumes:
-      - ./data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - KODAMA_PORT=8080
-    restart: unless-stopped
-```
+For now, run the compiled binary directly (for example via `systemd`, `tmux`, or a process manager).
+
+Recommended for public exposure:
+
+- put Kodama behind authentication at the network edge (Cloudflare Access, Tailscale, VPN, reverse-proxy auth)
+- do not expose it directly without access control
 
 ## License
 
