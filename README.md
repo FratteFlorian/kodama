@@ -65,6 +65,7 @@ Cost note:
 - **YOLO failover**: Optional per-task switch (Claude→Codex) on rate limit
 - **Command runtime mode**: Keep agents on host, run build/test commands on host or in auto-managed Docker
 - **Multi-agent**: Per-task agent selection (Claude Code or Codex)
+- **Parallel projects**: Multiple projects can run concurrently; each project executes its own backlog sequentially
 - **Task profiles**: Per-task execution profile (Architect, Developer, QA, Refactorer, Incident, UX Reviewer)
 - **Input attachments**: Attach PDFs/images/files to project PRDs and tasks
 - **PRD task planning**: Generate backlog tasks from PRD context and auto-import structured plans
