@@ -49,6 +49,11 @@ func runDaemon() {
 	}
 	defer database.Close()
 	slog.Info("database opened", "path", cfg.DataDir+"/kodama.db")
+	if recovered, err := database.RecoverRunningTasksToPending(); err != nil {
+		slog.Warn("recover running tasks", "err", err)
+	} else if recovered > 0 {
+		slog.Warn("recovered running tasks to pending", "count", recovered)
+	}
 
 	// Create WebSocket hubs (one for tasks, one for environment logs).
 	hub := web.NewHub()

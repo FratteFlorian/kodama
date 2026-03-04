@@ -186,6 +186,35 @@ func TestListPendingTasksIncludesReadyRateLimited(t *testing.T) {
 	assert.Contains(t, ids, t2.ID)
 }
 
+func TestRecoverRunningTasksToPending(t *testing.T) {
+	db := openTestDB(t)
+
+	p, _ := db.CreateProject("proj", "/repo", "", "claude", false)
+	tRunning, _ := db.CreateTask(p.ID, "running", "", 0, false)
+	tFailed, _ := db.CreateTask(p.ID, "failed", "", 1, false)
+	tDone, _ := db.CreateTask(p.ID, "done", "", 2, false)
+
+	require.NoError(t, db.UpdateTaskStatus(tRunning.ID, TaskStatusRunning))
+	require.NoError(t, db.UpdateTaskStatus(tFailed.ID, TaskStatusFailed))
+	require.NoError(t, db.UpdateTaskStatus(tDone.ID, TaskStatusDone))
+
+	n, err := db.RecoverRunningTasksToPending()
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), n)
+
+	gotRunning, err := db.GetTask(tRunning.ID)
+	require.NoError(t, err)
+	assert.Equal(t, TaskStatusPending, gotRunning.Status)
+
+	gotFailed, err := db.GetTask(tFailed.ID)
+	require.NoError(t, err)
+	assert.Equal(t, TaskStatusFailed, gotFailed.Status)
+
+	gotDone, err := db.GetTask(tDone.ID)
+	require.NoError(t, err)
+	assert.Equal(t, TaskStatusDone, gotDone.Status)
+}
+
 func TestCascadeDelete(t *testing.T) {
 	db := openTestDB(t)
 

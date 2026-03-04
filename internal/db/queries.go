@@ -131,6 +131,22 @@ func (db *DB) ListPendingTasks(projectID int64) ([]*Task, error) {
 	return tasks, rows.Err()
 }
 
+// RecoverRunningTasksToPending resets previously running tasks to pending.
+// This is used on daemon startup after an unexpected shutdown.
+func (db *DB) RecoverRunningTasksToPending() (int64, error) {
+	res, err := db.sql.Exec(
+		`UPDATE tasks SET status='pending', retry_after=NULL WHERE status='running'`,
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, nil
+	}
+	return n, nil
+}
+
 func (db *DB) UpdateTaskStatus(id int64, status TaskStatus) error {
 	now := time.Now()
 	switch status {
