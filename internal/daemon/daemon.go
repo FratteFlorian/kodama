@@ -242,6 +242,7 @@ func (d *Daemon) IsRunning(projectID int64) bool {
 // runProject processes all pending tasks for a project sequentially.
 func (d *Daemon) runProject(ctx context.Context, projectID int64) {
 	slog.Info("starting project", "project_id", projectID)
+	defer d.stopProjectRuntime(projectID)
 	projectName := ""
 	if proj, err := d.db.GetProject(projectID); err == nil && proj != nil {
 		projectName = proj.Name
@@ -277,10 +278,46 @@ func (d *Daemon) AnswerQuestion(taskID int64, answer string) error {
 	ch, ok := d.questions[taskID]
 	d.questionsMu.Unlock()
 
-	if !ok {
+	if ok {
+		select {
+		case ch <- answer:
+			return nil
+		default:
+			return fmt.Errorf("question channel for task %d is not ready", taskID)
+		}
+	}
+
+	// Fallback path: if the daemon was restarted while the task was waiting,
+	// there is no in-memory question channel anymore. Persist the answer so the
+	// task can resume on the next run loop.
+	task, err := d.db.GetTask(taskID)
+	if err != nil {
 		return fmt.Errorf("no waiting question for task %d", taskID)
 	}
-	ch <- answer
+	if task.Status != db.TaskStatusWaiting {
+		return fmt.Errorf("no waiting question for task %d", taskID)
+	}
+
+	question := task.ResumeQuestion
+	if question == "" {
+		question = "question"
+	}
+	if err := d.db.UpdateTaskResume(taskID, question, answer); err != nil {
+		return fmt.Errorf("store resume answer: %w", err)
+	}
+	if err := d.db.UpdateTaskStatus(taskID, db.TaskStatusPending); err != nil {
+		return fmt.Errorf("set task pending: %w", err)
+	}
+	chunk := fmt.Sprintf("[User answered: %s]\n", answer)
+	d.db.AppendTaskLog(taskID, chunk)
+	if d.hub != nil {
+		d.hub.Broadcast(taskID, chunk)
+	}
+	if !d.IsRunning(task.ProjectID) {
+		if err := d.StartProject(context.Background(), task.ProjectID); err != nil {
+			return fmt.Errorf("resume task: %w", err)
+		}
+	}
 	return nil
 }
 

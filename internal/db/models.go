@@ -20,6 +20,7 @@ type Project struct {
 	Name        string
 	RepoPath    string
 	DockerImage string
+	RuntimeMode string // "host" or "docker"
 	Agent       string // "claude" or "codex"
 	Failover    bool
 	CreatedAt   time.Time
@@ -32,6 +33,7 @@ type Task struct {
 	Description    string
 	Status         TaskStatus
 	Agent          string // overrides project default if set
+	Profile        string // optional task profile: architect/developer/qa/refactorer/incident/ux-reviewer
 	Priority       int
 	Failover       bool
 	RetryAfter     *time.Time
@@ -60,6 +62,18 @@ type TaskCheckpoint struct {
 	TaskID         int64
 	ChecklistState string
 	CreatedAt      time.Time
+}
+
+// Attachment is a user-uploaded file linked to either a project or a task.
+type Attachment struct {
+	ID        int64
+	ProjectID *int64
+	TaskID    *int64
+	Name      string
+	Path      string
+	MimeType  string
+	SizeBytes int64
+	CreatedAt time.Time
 }
 
 // EnvironmentStatus represents the lifecycle state of a dev environment.

@@ -61,7 +61,7 @@ func New(cfg *config.Config, database *db.DB, hub *Hub, envHub *Hub, daemon Daem
 
 	// Parse each page as its own template set (layout + page).
 	// This prevents {{define "content"}} blocks from conflicting across pages.
-	pages := []string{"index.html", "project.html", "task.html", "environment.html", "settings.html"}
+	pages := []string{"index.html", "project.html", "task.html", "environment.html", "settings.html", "files.html"}
 	s.templates = make(map[string]*template.Template, len(pages))
 	for _, page := range pages {
 		t, err := template.New("").Funcs(templateFuncs()).ParseFS(tmplFS, "layout.html", page)
@@ -95,10 +95,15 @@ func (s *Server) buildRouter() chi.Router {
 	r.Get("/", s.handleIndex)
 	r.Post("/projects", s.handleCreateProject)
 	r.Get("/projects/{id}", s.handleProject)
+	r.Get("/projects/{id}/files", s.handleProjectFiles)
+	r.Get("/projects/{id}/files/raw", s.handleProjectFileRaw)
 	r.Post("/projects/{id}/tasks", s.handleCreateTask)
+	r.Post("/projects/{id}/tasks/plan", s.handlePlanTasksFromPRD)
+	r.Post("/projects/{id}/tasks/workflow", s.handleCreateWorkflowTasks)
 	// HTML forms can only GET/POST, so expose dedicated POST routes for update/delete.
 	r.Post("/projects/{id}/tasks/{tid}/delete", s.handleDeleteTask)
 	r.Post("/projects/{id}/tasks/{tid}/agent", s.handleUpdateTaskAgent)
+	r.Post("/projects/{id}/tasks/{tid}/profile", s.handleUpdateTaskProfile)
 	r.Post("/projects/{id}/tasks/{tid}/failover", s.handleUpdateTaskFailover)
 	r.Post("/projects/{id}/tasks/{tid}/retry", s.handleRetryTask)
 	// Keep REST routes for the JSON API.
@@ -109,6 +114,8 @@ func (s *Server) buildRouter() chi.Router {
 	r.Post("/projects/{id}/stop", s.handleStopProject)
 	r.Get("/tasks/{id}", s.handleTask)
 	r.Post("/tasks/{id}/answer", s.handleAnswerQuestion)
+	r.Get("/attachments/{id}", s.handleAttachmentDownload)
+	r.Post("/attachments/{id}/delete", s.handleDeleteAttachment)
 	r.Get("/ws/tasks/{id}", s.handleWebSocket)
 	r.Get("/settings", s.handleSettingsPage)
 	r.Post("/settings", s.handleSettingsSave)

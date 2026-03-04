@@ -7,7 +7,7 @@ const (
 	SignalNone        Signal = iota
 	SignalQuestion           // KODAMA_QUESTION:
 	SignalDone               // KODAMA_DONE:
-	SignalRateLimited        // KODAMA_RATELIMIT: or native rate limit detection
+	SignalRateLimited        // KODAMA_RATELIMIT:
 	SignalBlocked            // KODAMA_BLOCKED:
 	SignalPR                 // KODAMA_PR:
 	SignalDecision           // KODAMA_DECISION:

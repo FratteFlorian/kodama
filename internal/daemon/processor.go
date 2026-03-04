@@ -25,6 +25,16 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 		d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
 		return
 	}
+	if err := d.ensureProjectRuntime(ctx, proj); err != nil {
+		slog.Error("ensure project runtime", "task_id", task.ID, "project_id", proj.ID, "err", err)
+		msg := fmt.Sprintf("[error] failed to prepare runtime: %v\n", err)
+		d.db.AppendTaskLog(task.ID, msg)
+		if d.hub != nil {
+			d.hub.Broadcast(task.ID, msg)
+		}
+		d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
+		return
+	}
 
 	// Update status to running.
 	if err := d.db.UpdateTaskStatus(task.ID, db.TaskStatusRunning); err != nil {
@@ -33,13 +43,14 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	}
 
 	// Build task prompt, prepending checkpoint if resuming.
-	prompt := task.Description
+	baseTask := applyTaskProfile(task.Description, task.Profile)
+	prompt := baseTask
 	if task.Status == db.TaskStatusRateLimited {
 		cp, err := d.db.GetLatestCheckpoint(task.ID)
 		if err == nil && cp != nil {
 			prompt = fmt.Sprintf(
 				"Resume the following task. Previous progress checklist:\n%s\n\nTask: %s",
-				cp.ChecklistState, task.Description,
+				cp.ChecklistState, baseTask,
 			)
 		}
 		d.db.UpdateTaskStatus(task.ID, db.TaskStatusRunning)
@@ -57,7 +68,7 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 			}
 			prompt = fmt.Sprintf(
 				"%s\n\nPrevious progress:\n%s\nAnswer to %q: %s",
-				task.Description, prior, question, task.ResumeAnswer,
+				baseTask, prior, question, task.ResumeAnswer,
 			)
 		}
 		d.db.ClearTaskResume(task.ID)
@@ -67,6 +78,9 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	if env := d.envManager.ActiveEnv(proj.ID); env != nil {
 		prompt = injectEnvContext(prompt, env)
 	}
+	projectFiles, _ := d.db.ListProjectAttachments(proj.ID)
+	taskFiles, _ := d.db.ListTaskAttachments(task.ID)
+	prompt = injectAttachmentContext(prompt, projectFiles, taskFiles)
 
 	ag, agentName := d.newAgent(task, proj)
 	entry := agentEntry{ag: ag, name: agentName}
@@ -281,8 +295,25 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	}
 
 	// Post-task: update kodama.md with decisions and status.
+	output := outputBuf.String()
+	if planned, err := extractPlannedTasks(output); err != nil {
+		slog.Warn("parse planned tasks", "task_id", task.ID, "err", err)
+	} else if len(planned) > 0 {
+		imported, err := d.importPlannedTasks(task.ProjectID, planned)
+		if err != nil {
+			slog.Warn("import planned tasks", "task_id", task.ID, "err", err)
+		} else if imported > 0 {
+			msg := fmt.Sprintf("[imported %d planned tasks]\n", imported)
+			d.db.AppendTaskLog(task.ID, msg)
+			if d.hub != nil {
+				d.hub.Broadcast(task.ID, msg)
+			}
+			d.sendNotification(formatTaskMsg(proj.Name, task.ID, fmt.Sprintf("imported %d planned tasks", imported)))
+		}
+	}
+
+	// Post-task: update kodama.md with decisions and status.
 	if proj.RepoPath != "" {
-		output := outputBuf.String()
 		allDecisions := append(decisions, ExtractDecisions(output)...)
 		if finalSummary := doneSummary; finalSummary == "" {
 			finalSummary = ExtractDoneSummary(output)
@@ -315,6 +346,7 @@ func (d *Daemon) handleQuestion(ctx context.Context, task *db.Task, question str
 	ag.Stop()
 
 	d.db.UpdateTaskStatus(task.ID, db.TaskStatusWaiting)
+	d.db.UpdateTaskResume(task.ID, question, "")
 
 	// Register a local answer channel (for web UI).
 	localCh := d.registerQuestion(task.ID)
@@ -336,16 +368,43 @@ func (d *Daemon) handleQuestion(ctx context.Context, task *db.Task, question str
 	}
 	d.sendNotification(formatTaskMsg(projectName, task.ID, fmt.Sprintf("waiting: %s", question)))
 
-	// Wait for an answer from either source.
+	// Wait for an answer from either source and periodically remind when still waiting.
 	var answer string
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case ans := <-localCh:
-		answer = ans
-	case ans, ok := <-telegramCh:
-		if ok {
+	reminderEvery := d.cfg.WaitingReminder
+	if reminderEvery == 0 {
+		reminderEvery = 30 * time.Minute
+	}
+	var reminderC <-chan time.Time
+	var reminderTimer *time.Timer
+	if reminderEvery > 0 {
+		reminderTimer = time.NewTimer(reminderEvery)
+		reminderC = reminderTimer.C
+		defer reminderTimer.Stop()
+	}
+waitLoop:
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case ans := <-localCh:
 			answer = ans
+			break waitLoop
+		case ans, ok := <-telegramCh:
+			if ok {
+				answer = ans
+				break waitLoop
+			}
+		case <-reminderC:
+			reminder := fmt.Sprintf("[still waiting for input: %s]\n", question)
+			d.db.AppendTaskLog(task.ID, reminder)
+			if d.hub != nil {
+				d.hub.Broadcast(task.ID, reminder)
+			}
+			d.sendNotification(formatTaskMsg(projectName, task.ID,
+				fmt.Sprintf("still waiting for input: %s", trimNotification(question, 180))))
+			if reminderTimer != nil {
+				reminderTimer.Reset(reminderEvery)
+			}
 		}
 	}
 
@@ -372,17 +431,6 @@ func (d *Daemon) handleQuestion(ctx context.Context, task *db.Task, question str
 func hasRateLimitSignal(output string) bool {
 	for _, line := range strings.Split(output, "\n") {
 		if sig, _ := agent.ParseSignal(line); sig == agent.SignalRateLimited {
-			return true
-		}
-		lower := strings.ToLower(line)
-		if strings.Contains(lower, "rate limit") ||
-			strings.Contains(lower, "usage limit") ||
-			strings.Contains(lower, "hit your limit") ||
-			strings.Contains(lower, "limit reached") ||
-			strings.Contains(lower, "too many requests") {
-			return true
-		}
-		if strings.Contains(lower, "resets ") && strings.Contains(lower, "limit") {
 			return true
 		}
 	}

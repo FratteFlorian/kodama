@@ -1,0 +1,50 @@
+{{define "title"}}Files — {{.Project.Name}} — Kodama{{end}}
+
+{{define "content"}}
+<div class="container">
+    <div class="page-header">
+        <div>
+            <a href="/projects/{{.Project.ID}}" class="back-link">← {{.Project.Name}}</a>
+            <h1>Files</h1>
+            <span class="project-meta">/{{.RelPath}}</span>
+        </div>
+    </div>
+
+    {{if .IsDir}}
+    <section class="project-settings">
+        <h2>Directory</h2>
+        {{if .ParentLink}}<p><a href="{{.ParentLink}}">↑ Parent</a></p>{{end}}
+        {{if .Entries}}
+        <div class="task-list">
+            {{range .Entries}}
+            <div class="task-item">
+                <div class="task-info">
+                    <a class="task-desc" href="{{.LinkPath}}">{{if .IsDir}}📁{{else}}📄{{end}} {{.Name}}</a>
+                    <span class="task-cost">{{.ModTime}}{{if not .IsDir}} • {{.SizeBytes}} bytes{{end}}</span>
+                </div>
+                <div class="task-controls">
+                    {{if not .IsDir}}<a class="btn btn-sm" href="{{.Download}}" target="_blank" rel="noreferrer">Open</a>{{end}}
+                </div>
+            </div>
+            {{end}}
+        </div>
+        {{else}}
+        <p class="empty">Directory is empty.</p>
+        {{end}}
+    </section>
+    {{else}}
+    <section class="task-output">
+        <h2>File Preview</h2>
+        <p><a class="btn btn-sm" href="{{.DownloadLink}}" target="_blank" rel="noreferrer">Open Raw</a></p>
+        {{if .Binary}}
+        <p class="empty">Binary or non-text file. Use Open Raw to inspect/download.</p>
+        {{else}}
+        <div id="output-container" class="output-box">
+            <pre id="output">{{.FileContent}}</pre>
+        </div>
+        {{if .Truncated}}<p class="project-meta">Preview truncated at 512KB.</p>{{end}}
+        {{end}}
+    </section>
+    {{end}}
+</div>
+{{end}}

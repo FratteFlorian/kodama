@@ -16,6 +16,16 @@ const kodamaMdTemplate = `# %s
 ## Tech Stack & Conventions
 _To be filled in as decisions are made._
 
+## Task Profiles
+Kodama can apply per-task execution profiles to shape behavior:
+
+- architect: focus on design, trade-offs, interfaces, and migration strategy
+- developer: implement changes end-to-end with focused diffs and tests
+- qa: find defects/regressions and validate edge cases
+- refactorer: improve structure without changing intended behavior
+- incident: optimise for safe and fast mitigation + root cause clarity
+- ux-reviewer: review from end-user perspective (flows, friction, states, copy)
+
 ## Architecture Decisions
 _None yet._
 

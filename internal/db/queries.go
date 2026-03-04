@@ -10,7 +10,7 @@ import (
 
 func (db *DB) CreateProject(name, repoPath, dockerImage, agent string, failover bool) (*Project, error) {
 	res, err := db.sql.Exec(
-		`INSERT INTO projects (name, repo_path, docker_image, agent, failover) VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO projects (name, repo_path, docker_image, runtime_mode, agent, failover) VALUES (?, ?, ?, 'host', ?, ?)`,
 		name, repoPath, dockerImage, agent, boolToInt(failover),
 	)
 	if err != nil {
@@ -22,14 +22,14 @@ func (db *DB) CreateProject(name, repoPath, dockerImage, agent string, failover 
 
 func (db *DB) GetProject(id int64) (*Project, error) {
 	row := db.sql.QueryRow(
-		`SELECT id, name, repo_path, docker_image, agent, failover, created_at FROM projects WHERE id = ?`, id,
+		`SELECT id, name, repo_path, docker_image, runtime_mode, agent, failover, created_at FROM projects WHERE id = ?`, id,
 	)
 	return scanProject(row)
 }
 
 func (db *DB) ListProjects() ([]*Project, error) {
 	rows, err := db.sql.Query(
-		`SELECT id, name, repo_path, docker_image, agent, failover, created_at FROM projects ORDER BY created_at DESC`,
+		`SELECT id, name, repo_path, docker_image, runtime_mode, agent, failover, created_at FROM projects ORDER BY created_at DESC`,
 	)
 	if err != nil {
 		return nil, err
@@ -54,6 +54,11 @@ func (db *DB) UpdateProject(id int64, name, repoPath, dockerImage, agent string,
 	return err
 }
 
+func (db *DB) UpdateProjectRuntimeMode(id int64, runtimeMode string) error {
+	_, err := db.sql.Exec(`UPDATE projects SET runtime_mode=? WHERE id=?`, runtimeMode, id)
+	return err
+}
+
 func (db *DB) DeleteProject(id int64) error {
 	_, err := db.sql.Exec(`DELETE FROM projects WHERE id = ?`, id)
 	return err
@@ -75,7 +80,7 @@ func (db *DB) CreateTask(projectID int64, description, agent string, priority in
 
 func (db *DB) GetTask(id int64) (*Task, error) {
 	row := db.sql.QueryRow(
-		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at,
+		`SELECT id, project_id, description, status, agent, profile, priority, created_at, started_at, completed_at,
 		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer, failover, retry_after FROM tasks WHERE id = ?`, id,
 	)
 	return scanTask(row)
@@ -83,7 +88,7 @@ func (db *DB) GetTask(id int64) (*Task, error) {
 
 func (db *DB) ListTasks(projectID int64) ([]*Task, error) {
 	rows, err := db.sql.Query(
-		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at,
+		`SELECT id, project_id, description, status, agent, profile, priority, created_at, started_at, completed_at,
 		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer, failover, retry_after
 		 FROM tasks WHERE project_id = ? ORDER BY priority ASC, created_at ASC`,
 		projectID,
@@ -105,7 +110,7 @@ func (db *DB) ListTasks(projectID int64) ([]*Task, error) {
 
 func (db *DB) ListPendingTasks(projectID int64) ([]*Task, error) {
 	rows, err := db.sql.Query(
-		`SELECT id, project_id, description, status, agent, priority, created_at, started_at, completed_at,
+		`SELECT id, project_id, description, status, agent, profile, priority, created_at, started_at, completed_at,
 		        session_id, cost_usd, input_tokens, output_tokens, resume_question, resume_answer, failover, retry_after
 		 FROM tasks WHERE project_id = ? AND (status = 'pending' OR (status = 'rate_limited' AND retry_after IS NOT NULL AND retry_after <= strftime('%s','now')))
 		 ORDER BY priority ASC, created_at ASC`,
@@ -171,6 +176,11 @@ func (db *DB) UpdateTaskDescription(id int64, description string) error {
 
 func (db *DB) UpdateTaskAgent(id int64, agent string) error {
 	_, err := db.sql.Exec(`UPDATE tasks SET agent=? WHERE id=?`, agent, id)
+	return err
+}
+
+func (db *DB) UpdateTaskProfile(id int64, profile string) error {
+	_, err := db.sql.Exec(`UPDATE tasks SET profile=? WHERE id=?`, profile, id)
 	return err
 }
 
@@ -272,6 +282,99 @@ func (db *DB) GetLatestCheckpoint(taskID int64) (*TaskCheckpoint, error) {
 		return nil, err
 	}
 	return &cp, nil
+}
+
+// --- Attachments ---
+
+func (db *DB) CreateProjectAttachment(projectID int64, name, path, mimeType string, sizeBytes int64) (*Attachment, error) {
+	res, err := db.sql.Exec(
+		`INSERT INTO attachments (project_id, name, path, mime_type, size_bytes) VALUES (?, ?, ?, ?, ?)`,
+		projectID, name, path, mimeType, sizeBytes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	id, _ := res.LastInsertId()
+	return db.GetAttachment(id)
+}
+
+func (db *DB) CreateTaskAttachment(taskID int64, name, path, mimeType string, sizeBytes int64) (*Attachment, error) {
+	res, err := db.sql.Exec(
+		`INSERT INTO attachments (task_id, name, path, mime_type, size_bytes) VALUES (?, ?, ?, ?, ?)`,
+		taskID, name, path, mimeType, sizeBytes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	id, _ := res.LastInsertId()
+	return db.GetAttachment(id)
+}
+
+func (db *DB) GetAttachment(id int64) (*Attachment, error) {
+	row := db.sql.QueryRow(
+		`SELECT id, project_id, task_id, name, path, mime_type, size_bytes, created_at FROM attachments WHERE id=?`, id,
+	)
+	return scanAttachment(row)
+}
+
+func (db *DB) ListProjectAttachments(projectID int64) ([]*Attachment, error) {
+	rows, err := db.sql.Query(
+		`SELECT id, project_id, task_id, name, path, mime_type, size_bytes, created_at
+		 FROM attachments WHERE project_id=? ORDER BY created_at ASC, id ASC`,
+		projectID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Attachment
+	for rows.Next() {
+		a, err := scanAttachment(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) ListTaskAttachments(taskID int64) ([]*Attachment, error) {
+	rows, err := db.sql.Query(
+		`SELECT id, project_id, task_id, name, path, mime_type, size_bytes, created_at
+		 FROM attachments WHERE task_id=? ORDER BY created_at ASC, id ASC`,
+		taskID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*Attachment
+	for rows.Next() {
+		a, err := scanAttachment(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) CloneTaskAttachments(fromTaskID, toTaskID int64) error {
+	attachments, err := db.ListTaskAttachments(fromTaskID)
+	if err != nil {
+		return err
+	}
+	for _, a := range attachments {
+		if _, err := db.CreateTaskAttachment(toTaskID, a.Name, a.Path, a.MimeType, a.SizeBytes); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (db *DB) DeleteAttachment(id int64) error {
+	_, err := db.sql.Exec(`DELETE FROM attachments WHERE id=?`, id)
+	return err
 }
 
 // --- Environments ---
@@ -392,12 +495,15 @@ type scanner interface {
 func scanProject(s scanner) (*Project, error) {
 	var p Project
 	var failover int
-	err := s.Scan(&p.ID, &p.Name, &p.RepoPath, &p.DockerImage, &p.Agent, &failover, &p.CreatedAt)
+	err := s.Scan(&p.ID, &p.Name, &p.RepoPath, &p.DockerImage, &p.RuntimeMode, &p.Agent, &failover, &p.CreatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("project not found")
 		}
 		return nil, err
+	}
+	if p.RuntimeMode == "" {
+		p.RuntimeMode = "host"
 	}
 	p.Failover = failover != 0
 	return &p, nil
@@ -407,7 +513,7 @@ func scanTask(s scanner) (*Task, error) {
 	var t Task
 	var startedAt, completedAt sql.NullTime
 	var retryAfter sql.NullInt64
-	err := s.Scan(&t.ID, &t.ProjectID, &t.Description, &t.Status, &t.Agent, &t.Priority,
+	err := s.Scan(&t.ID, &t.ProjectID, &t.Description, &t.Status, &t.Agent, &t.Profile, &t.Priority,
 		&t.CreatedAt, &startedAt, &completedAt,
 		&t.SessionID, &t.CostUSD, &t.InputTokens, &t.OutputTokens,
 		&t.ResumeQuestion, &t.ResumeAnswer, &t.Failover, &retryAfter)
@@ -454,4 +560,26 @@ func scanEnvironment(s scanner) (*Environment, error) {
 		e.StoppedAt = &stoppedAt.Time
 	}
 	return &e, nil
+}
+
+func scanAttachment(s scanner) (*Attachment, error) {
+	var a Attachment
+	var projectID sql.NullInt64
+	var taskID sql.NullInt64
+	err := s.Scan(&a.ID, &projectID, &taskID, &a.Name, &a.Path, &a.MimeType, &a.SizeBytes, &a.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("attachment not found")
+		}
+		return nil, err
+	}
+	if projectID.Valid {
+		p := projectID.Int64
+		a.ProjectID = &p
+	}
+	if taskID.Valid {
+		t := taskID.Int64
+		a.TaskID = &t
+	}
+	return &a, nil
 }

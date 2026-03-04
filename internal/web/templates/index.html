@@ -22,7 +22,7 @@
 
     <section class="create-form">
         <h2>New Project</h2>
-        <form method="POST" action="/projects">
+        <form method="POST" action="/projects" enctype="multipart/form-data">
             <div class="form-group">
                 <label for="name">Name</label>
                 <input type="text" id="name" name="name" required placeholder="My Project">
@@ -40,8 +40,21 @@
                 </select>
             </div>
             <div class="form-group">
+                <label for="runtime_mode">Command Runtime</label>
+                <select id="runtime_mode" name="runtime_mode">
+                    <option value="docker" selected>Docker (Recommended)</option>
+                    <option value="host">Host</option>
+                </select>
+                <small class="form-hint">Agent still runs on the host. This controls where build/test commands run.</small>
+            </div>
+            <div class="form-group">
                 <label for="prd">Project Description / PRD</label>
                 <textarea id="prd" name="prd" rows="6" placeholder="Describe the project goals and requirements..."></textarea>
+            </div>
+            <div class="form-group">
+                <label for="project-attachments">Attachments (optional)</label>
+                <input type="file" id="project-attachments" name="attachments" multiple>
+                <small class="form-hint">You can attach PDFs, screenshots, and other reference files.</small>
             </div>
             <button type="submit" class="btn btn-primary">Create Project</button>
         </form>

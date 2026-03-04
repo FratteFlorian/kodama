@@ -13,6 +13,8 @@ type Config struct {
 	DataDir          string
 	QuestionTimeout  time.Duration `yaml:"-"`
 	QuestionTimeoutS int
+	WaitingReminder  time.Duration `yaml:"-"`
+	WaitingReminderS int
 	Docker           DockerConfig
 	Claude           ClaudeConfig
 }
@@ -38,6 +40,7 @@ func defaults() Config {
 		Port:             8080,
 		DataDir:          dataDir,
 		QuestionTimeoutS: 600, // 10 minutes — claude --print can take 60-120s before producing output
+		WaitingReminderS: 1800,
 		Docker: DockerConfig{
 			Socket: "/var/run/docker.sock",
 		},
@@ -66,6 +69,11 @@ func Load() (*Config, error) {
 			cfg.QuestionTimeoutS = n
 		}
 	}
+	if v := os.Getenv("KODAMA_WAITING_REMINDER"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.WaitingReminderS = n
+		}
+	}
 	if v := os.Getenv("KODAMA_CLAUDE_BINARY"); v != "" {
 		cfg.Claude.Binary = v
 	}
@@ -78,6 +86,10 @@ func Load() (*Config, error) {
 		cfg.QuestionTimeoutS = 600
 	}
 	cfg.QuestionTimeout = time.Duration(cfg.QuestionTimeoutS) * time.Second
+	if cfg.WaitingReminderS < 0 {
+		cfg.WaitingReminderS = 0
+	}
+	cfg.WaitingReminder = time.Duration(cfg.WaitingReminderS) * time.Second
 
 	return &cfg, nil
 }

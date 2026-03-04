@@ -17,7 +17,7 @@ type EnvironmentManager struct {
 	hub      Broadcaster
 	mu       sync.Mutex
 	running  map[int64]context.CancelFunc // envID → cancel
-	done     map[int64]chan struct{}       // envID → closed when goroutine exits
+	done     map[int64]chan struct{}      // envID → closed when goroutine exits
 }
 
 // NewEnvironmentManager creates a new EnvironmentManager.
@@ -267,6 +267,10 @@ func injectEnvContext(prompt string, env *db.Environment) string {
 	case "compose":
 		note = fmt.Sprintf(
 			"Note: A dev environment is running for this project (repo mounted at /workspace).\n"+
+				"Docker runtime policy (mandatory):\n"+
+				"- A working Dockerfile and docker-compose.yml are required artifacts, not optional.\n"+
+				"- If they are missing or weak, create/improve them first using tech-specific best practices.\n"+
+				"- Treat container build/test execution as acceptance criteria (commands must work in container).\n"+
 				"Write and edit files normally on the host. To build or test, run commands inside the container:\n"+
 				"  docker compose -f %s exec <service> <command>\n"+
 				"  e.g. docker compose -f %s exec app go test ./...\n\n",
@@ -276,6 +280,10 @@ func injectEnvContext(prompt string, env *db.Environment) string {
 		containerName := fmt.Sprintf("kodama-env-%d", env.ProjectID)
 		note = fmt.Sprintf(
 			"Note: A dev environment is running for this project (repo mounted at /workspace).\n"+
+				"Docker runtime policy (mandatory):\n"+
+				"- A working Dockerfile and docker-compose.yml are required artifacts, not optional.\n"+
+				"- If they are missing or weak, create/improve them first using tech-specific best practices.\n"+
+				"- Treat container build/test execution as acceptance criteria (commands must work in container).\n"+
 				"Write and edit files normally on the host. To build or test, run commands inside the container:\n"+
 				"  docker exec %s <command>\n"+
 				"  e.g. docker exec %s go test ./...\n\n",

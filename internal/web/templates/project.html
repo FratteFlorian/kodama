@@ -7,6 +7,7 @@
             <a href="/" class="back-link">← Projects</a>
             <h1>{{.Project.Name}}</h1>
             {{if .Project.RepoPath}}<span class="project-meta">{{.Project.RepoPath}}</span>{{end}}
+            {{if .Project.RepoPath}}<div style="margin-top:.4rem"><a href="/projects/{{.Project.ID}}/files" class="btn btn-sm">Browse Files</a></div>{{end}}
         </div>
         <div class="project-controls">
             {{if .IsRunning}}
@@ -31,8 +32,9 @@
     </div>
     {{end}}
 
+    {{if eq .Project.RuntimeMode "docker"}}
     <section class="project-settings">
-        <h2>Dev Environment</h2>
+        <h2>Docker Runtime</h2>
         {{if .Env}}
         <div class="env-status-row">
             <span class="badge status-{{envStatusBadge .Env.Status}}">
@@ -40,45 +42,13 @@
             </span>
             <span class="env-config-label">{{.Env.Type}}: {{.Env.ConfigPath}}</span>
             <div class="env-controls">
-                {{if .IsEnvRunning}}
                 <a href="/projects/{{.Project.ID}}/environment" class="btn btn-sm">→ Logs</a>
-                <form method="POST" action="/projects/{{.Project.ID}}/environment/restart" style="display:inline">
-                    <button type="submit" class="btn btn-sm">↺ Restart</button>
-                </form>
-                <form method="POST" action="/projects/{{.Project.ID}}/environment/stop" style="display:inline">
-                    <button type="submit" class="btn btn-sm btn-danger">■ Stop</button>
-                </form>
-                {{else}}
-                <a href="/projects/{{.Project.ID}}/environment" class="btn btn-sm">→ Logs</a>
-                <form method="POST" action="/projects/{{.Project.ID}}/environment/start" style="display:inline">
-                    <button type="submit" class="btn btn-sm btn-primary">▶ Start</button>
-                </form>
-                {{end}}
             </div>
         </div>
         {{end}}
-        <details {{if not .Env}}open{{end}} style="margin-top:0.75rem">
-            <summary style="cursor:pointer;color:var(--muted);font-size:0.875rem;user-select:none">Configure</summary>
-            <form method="POST" action="/projects/{{.Project.ID}}/environment" style="margin-top:0.75rem">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Type</label>
-                        <select name="type">
-                            <option value="compose" {{if and .Env (eq .Env.Type "compose")}}selected{{end}}>Docker Compose</option>
-                            <option value="dockerfile" {{if and .Env (eq .Env.Type "dockerfile")}}selected{{end}}>Dockerfile</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Config Path</label>
-                        <input type="text" name="config_path"
-                               value="{{if .Env}}{{.Env.ConfigPath}}{{end}}"
-                               placeholder="docker-compose.yml or Dockerfile">
-                    </div>
-                </div>
-                <button type="submit" class="btn btn-primary btn-sm">Save</button>
-            </form>
-        </details>
+        <small class="form-hint">Docker environment is managed automatically when backlog processing starts.</small>
     </section>
+    {{end}}
 
     <section class="backlog">
         <h2>Backlog</h2>
@@ -105,6 +75,17 @@
                                 <option value="" {{if eq .Agent ""}}selected{{end}}>Default</option>
                             </select>
                         </form>
+                        <form method="POST" action="/projects/{{$.Project.ID}}/tasks/{{.ID}}/profile" style="display:inline">
+                            <select name="profile" onchange="this.form.submit()">
+                                <option value="developer" {{if eq .Profile "developer"}}selected{{end}}>Developer</option>
+                                <option value="architect" {{if eq .Profile "architect"}}selected{{end}}>Architect</option>
+                                <option value="qa" {{if eq .Profile "qa"}}selected{{end}}>QA</option>
+                                <option value="refactorer" {{if eq .Profile "refactorer"}}selected{{end}}>Refactorer</option>
+                                <option value="incident" {{if eq .Profile "incident"}}selected{{end}}>Incident</option>
+                                <option value="ux-reviewer" {{if eq .Profile "ux-reviewer"}}selected{{end}}>UX Reviewer</option>
+                                <option value="" {{if eq .Profile ""}}selected{{end}}>None</option>
+                            </select>
+                        </form>
                         <form method="POST" action="/projects/{{$.Project.ID}}/tasks/{{.ID}}/failover" style="display:inline">
                             <label class="inline-checkbox" title="Allow YOLO failover on rate limit">
                                 <input type="checkbox" name="failover" onchange="this.form.submit()" {{if .Failover}}checked{{end}}>
@@ -129,16 +110,39 @@
         {{end}}
     </section>
 
+    {{if .ProjectFiles}}
+    <section class="project-settings">
+        <h2>Project Attachments</h2>
+        <div class="task-list">
+            {{range .ProjectFiles}}
+            <div class="task-item">
+                <div class="task-info">
+                    <a class="task-desc" href="/attachments/{{.ID}}" target="_blank" rel="noreferrer">{{.Name}}</a>
+                    <span class="task-cost">{{.MimeType}}</span>
+                </div>
+                <div class="task-controls">
+                    <form method="POST" action="/attachments/{{.ID}}/delete" style="display:inline"
+                          onsubmit="return confirm('Delete this attachment?')">
+                        <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                    </form>
+                </div>
+            </div>
+            {{end}}
+        </div>
+    </section>
+    {{end}}
+
     <section class="project-settings">
         <h2>Settings</h2>
         <form method="POST" action="/projects/{{.Project.ID}}/settings">
             <div class="form-row">
                 <div class="form-group">
-                    <label for="docker_image">Docker Image</label>
-                    <input type="text" id="docker_image" name="docker_image"
-                           value="{{.Project.DockerImage}}"
-                           placeholder="golang:1.22 (optional)">
-                    <small class="form-hint">Run the agent inside this container. Leave blank to run on the host.</small>
+                    <label for="runtime_mode">Command Runtime</label>
+                    <select id="runtime_mode" name="runtime_mode">
+                        <option value="docker" {{if eq .Project.RuntimeMode "docker"}}selected{{end}}>Docker (Recommended)</option>
+                        <option value="host" {{if eq .Project.RuntimeMode "host"}}selected{{end}}>Host</option>
+                    </select>
+                    <small class="form-hint">Agent always runs on host. This controls where build/test commands run.</small>
                 </div>
                 <div class="form-group">
                     <label for="default_agent">Default Agent</label>
@@ -154,7 +158,7 @@
 
     <section class="add-task">
         <h2>Add Task</h2>
-        <form method="POST" action="/projects/{{.Project.ID}}/tasks">
+        <form method="POST" action="/projects/{{.Project.ID}}/tasks" enctype="multipart/form-data">
             <div class="form-group">
                 <label for="description">Task Description</label>
                 <textarea id="description" name="description" rows="3" required
@@ -170,6 +174,18 @@
                     </select>
                 </div>
                 <div class="form-group">
+                    <label for="task-profile">Profile</label>
+                    <select id="task-profile" name="profile">
+                        <option value="developer" selected>Developer</option>
+                        <option value="architect">Architect</option>
+                        <option value="qa">QA</option>
+                        <option value="refactorer">Refactorer</option>
+                        <option value="incident">Incident</option>
+                        <option value="ux-reviewer">UX Reviewer</option>
+                        <option value="">None</option>
+                    </select>
+                </div>
+                <div class="form-group">
                     <label for="priority">Priority</label>
                     <input type="number" id="priority" name="priority" value="0" min="0">
                 </div>
@@ -181,7 +197,45 @@
                     </label>
                 </div>
             </div>
+            <div class="form-group">
+                <label for="task-attachments">Task Attachments (optional)</label>
+                <input type="file" id="task-attachments" name="attachments" multiple>
+                <small class="form-hint">Attach specs, screenshots, or logs for this task.</small>
+            </div>
             <button type="submit" class="btn btn-primary">Add Task</button>
+        </form>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0">
+
+        <h2>Quick Workflow</h2>
+        <form method="POST" action="/projects/{{.Project.ID}}/tasks/plan" style="margin-bottom:1rem">
+            <div class="form-group" style="max-width: 18rem;">
+                <label for="planner-agent">Planner Agent</label>
+                <select id="planner-agent" name="agent">
+                    <option value="">Default ({{.Project.Agent}})</option>
+                    <option value="claude">Claude Code</option>
+                    <option value="codex">Codex</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Plan Tasks From PRD</button>
+            <small class="form-hint">Creates one architect planning task. Its structured output will be auto-imported into backlog tasks.</small>
+        </form>
+
+        <form method="POST" action="/projects/{{.Project.ID}}/tasks/workflow">
+            <div class="form-group">
+                <label for="workflow-goal">Goal</label>
+                <textarea id="workflow-goal" name="goal" rows="2" required
+                    placeholder="Improve onboarding UX for first-time users"></textarea>
+            </div>
+            <div class="form-group" style="max-width: 18rem;">
+                <label for="workflow-agent">Agent</label>
+                <select id="workflow-agent" name="agent">
+                    <option value="">Default ({{.Project.Agent}})</option>
+                    <option value="claude">Claude Code</option>
+                    <option value="codex">Codex</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Create Architect → Developer → QA</button>
         </form>
     </section>
 </div>

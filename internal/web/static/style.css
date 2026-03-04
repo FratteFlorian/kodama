@@ -171,11 +171,30 @@ main { padding: 2rem 1.5rem; }
 .task-desc:hover { color: var(--accent); }
 
 .task-controls { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.attachment-list { list-style: none; padding-left: 0; margin: 0; }
+.attachment-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--border);
+}
+.attachment-list li:last-child { border-bottom: none; }
 
 /* Forms */
 .form-group { margin-bottom: 1rem; }
 .form-group label { display: block; font-size: 0.875rem; color: var(--muted); margin-bottom: 0.4rem; }
 .form-hint { display: block; font-size: 0.75rem; color: var(--muted); margin-top: 0.3rem; }
+.form-error {
+    margin: 0 0 0.9rem 0;
+    padding: 0.6rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid rgba(248, 113, 113, 0.35);
+    background: rgba(248, 113, 113, 0.12);
+    color: var(--red);
+    font-size: 0.875rem;
+}
 .inline-checkbox { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8125rem; color: var(--muted); }
 .inline-checkbox input { margin: 0; }
 

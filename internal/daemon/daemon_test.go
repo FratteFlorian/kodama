@@ -18,6 +18,8 @@ func TestGenerateKodamaMd(t *testing.T) {
 	assert.Contains(t, content, "KODAMA_QUESTION:")
 	assert.Contains(t, content, "KODAMA_DONE:")
 	assert.Contains(t, content, "## Communication Protocol")
+	assert.Contains(t, content, "## Task Profiles")
+	assert.Contains(t, content, "ux-reviewer")
 }
 
 func TestInitProject(t *testing.T) {
@@ -152,4 +154,10 @@ func TestInjectEnvContextUnknownType(t *testing.T) {
 	// Unknown type — prompt returned unchanged.
 	result := injectEnvContext("do the task", env)
 	assert.Equal(t, "do the task", result)
+}
+
+func TestHasRateLimitSignalRequiresStructuredSignal(t *testing.T) {
+	assert.False(t, hasRateLimitSignal("We need to handle rate limits in our retry logic."))
+	assert.False(t, hasRateLimitSignal("Too many requests can happen in production."))
+	assert.True(t, hasRateLimitSignal("KODAMA_RATELIMIT: Usage limit hit"))
 }

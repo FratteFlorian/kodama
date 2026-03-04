@@ -20,9 +20,9 @@ func TestParseSignal(t *testing.T) {
 		{"KODAMA_DECISION: Using Chi router", SignalDecision, "Using Chi router"},
 		{"just normal output", SignalNone, ""},
 		{"", SignalNone, ""},
-		// Native rate limit detection
-		{"Claude AI usage limit reached for claude-3-5-sonnet", SignalRateLimited, "Claude AI usage limit reached for claude-3-5-sonnet"},
-		{"Error: rate limit exceeded", SignalRateLimited, "Error: rate limit exceeded"},
+		// Free-form output should never trigger a control signal.
+		{"Error: rate limit exceeded", SignalNone, ""},
+		{"This task should handle rate limits gracefully", SignalNone, ""},
 		// Leading/trailing whitespace stripped
 		{"  KODAMA_DONE: done  ", SignalDone, "done"},
 		// Prefix only

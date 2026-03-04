@@ -1,6 +1,8 @@
 package db
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -273,6 +275,45 @@ func TestEnvironmentCascadeDeleteWithProject(t *testing.T) {
 	got, err := db.GetEnvironment(p.ID)
 	require.NoError(t, err)
 	assert.Nil(t, got)
+}
+
+func TestAttachmentsCRUDAndClone(t *testing.T) {
+	db := openTestDB(t)
+	p, err := db.CreateProject("proj", "/repo", "", "claude", false)
+	require.NoError(t, err)
+	t1, err := db.CreateTask(p.ID, "task", "", 0, false)
+	require.NoError(t, err)
+	t2, err := db.CreateTask(p.ID, "task2", "", 1, false)
+	require.NoError(t, err)
+
+	tmp := t.TempDir()
+	pf := filepath.Join(tmp, "spec.pdf")
+	require.NoError(t, os.WriteFile(pf, []byte("pdf"), 0644))
+	tf := filepath.Join(tmp, "shot.png")
+	require.NoError(t, os.WriteFile(tf, []byte("img"), 0644))
+
+	pa, err := db.CreateProjectAttachment(p.ID, "spec.pdf", pf, "application/pdf", 3)
+	require.NoError(t, err)
+	require.NotNil(t, pa.ProjectID)
+	require.Nil(t, pa.TaskID)
+
+	ta, err := db.CreateTaskAttachment(t1.ID, "shot.png", tf, "image/png", 3)
+	require.NoError(t, err)
+	require.NotNil(t, ta.TaskID)
+
+	projectFiles, err := db.ListProjectAttachments(p.ID)
+	require.NoError(t, err)
+	require.Len(t, projectFiles, 1)
+
+	taskFiles, err := db.ListTaskAttachments(t1.ID)
+	require.NoError(t, err)
+	require.Len(t, taskFiles, 1)
+
+	require.NoError(t, db.CloneTaskAttachments(t1.ID, t2.ID))
+	cloned, err := db.ListTaskAttachments(t2.ID)
+	require.NoError(t, err)
+	require.Len(t, cloned, 1)
+	assert.Equal(t, "shot.png", cloned[0].Name)
 }
 
 func TestSettingsUpsertAndGet(t *testing.T) {

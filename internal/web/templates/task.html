@@ -35,11 +35,18 @@
             <span class="meta-label">failover</span>
             <span class="meta-value">{{if .Task.Failover}}on{{else}}off{{end}}</span>
         </div>
+        <div class="meta-chip">
+            <span class="meta-label">profile</span>
+            <span class="meta-value">{{if .Task.Profile}}{{.Task.Profile}}{{else}}none{{end}}</span>
+        </div>
     </div>
 
     {{if eq .Task.Status "waiting"}}
     <section class="answer-form">
         <h2>Agent is waiting for input</h2>
+        {{if .AnswerError}}
+        <p class="form-error">{{.AnswerError}}</p>
+        {{end}}
         <form method="POST" action="/tasks/{{.Task.ID}}/answer">
             <div class="form-group">
                 <label for="answer">Your Answer</label>
@@ -58,6 +65,40 @@
             <pre id="output">{{.Log}}</pre>
         </div>
     </section>
+
+    {{if .TaskFiles}}
+    <section class="task-output">
+        <h2>Task Attachments</h2>
+        <ul class="attachment-list">
+            {{range .TaskFiles}}
+            <li>
+                <a href="/attachments/{{.ID}}" target="_blank" rel="noreferrer">{{.Name}}</a>{{if .MimeType}} — {{.MimeType}}{{end}}
+                <form method="POST" action="/attachments/{{.ID}}/delete" style="display:inline"
+                      onsubmit="return confirm('Delete this attachment?')">
+                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                </form>
+            </li>
+            {{end}}
+        </ul>
+    </section>
+    {{end}}
+
+    {{if .ProjectFiles}}
+    <section class="task-output">
+        <h2>Project Attachments</h2>
+        <ul class="attachment-list">
+            {{range .ProjectFiles}}
+            <li>
+                <a href="/attachments/{{.ID}}" target="_blank" rel="noreferrer">{{.Name}}</a>{{if .MimeType}} — {{.MimeType}}{{end}}
+                <form method="POST" action="/attachments/{{.ID}}/delete" style="display:inline"
+                      onsubmit="return confirm('Delete this attachment?')">
+                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                </form>
+            </li>
+            {{end}}
+        </ul>
+    </section>
+    {{end}}
 </div>
 
 <script src="/static/output.js"></script>

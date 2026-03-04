@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS projects (
     name         TEXT NOT NULL,
     repo_path    TEXT NOT NULL DEFAULT '',
     docker_image TEXT NOT NULL DEFAULT '',
+    runtime_mode TEXT NOT NULL DEFAULT 'host',
     agent        TEXT NOT NULL DEFAULT 'codex',
     failover     INTEGER NOT NULL DEFAULT 0,
     created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -63,6 +64,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     description  TEXT NOT NULL,
     status       TEXT NOT NULL DEFAULT 'pending',
     agent        TEXT NOT NULL DEFAULT '',
+    profile      TEXT NOT NULL DEFAULT '',
     priority     INTEGER NOT NULL DEFAULT 0,
     failover     INTEGER NOT NULL DEFAULT 0,
     retry_after  DATETIME,
@@ -83,6 +85,17 @@ CREATE TABLE IF NOT EXISTS task_checkpoints (
     task_id          INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     checklist_state  TEXT NOT NULL,
     created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS attachments (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id  INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    task_id     INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    path        TEXT NOT NULL,
+    mime_type   TEXT NOT NULL DEFAULT '',
+    size_bytes  INTEGER NOT NULL DEFAULT 0,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS environments (
@@ -113,6 +126,8 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_task_logs_task_id ON task_logs(task_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_project_id ON attachments(project_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_task_id ON attachments(task_id);
 CREATE INDEX IF NOT EXISTS idx_environments_project_id ON environments(project_id);
 CREATE INDEX IF NOT EXISTS idx_environment_logs_env_id ON environment_logs(env_id);
 `
@@ -122,6 +137,7 @@ CREATE INDEX IF NOT EXISTS idx_environment_logs_env_id ON environment_logs(env_i
 	// Additive migrations: add columns to existing tables.
 	// SQLite errors on duplicate column names — ignore those errors.
 	migrations := []string{
+		`ALTER TABLE projects ADD COLUMN runtime_mode TEXT NOT NULL DEFAULT 'host'`,
 		`ALTER TABLE tasks ADD COLUMN session_id    TEXT    NOT NULL DEFAULT ''`,
 		`ALTER TABLE tasks ADD COLUMN cost_usd      REAL    NOT NULL DEFAULT 0`,
 		`ALTER TABLE tasks ADD COLUMN input_tokens  INTEGER NOT NULL DEFAULT 0`,
@@ -130,6 +146,7 @@ CREATE INDEX IF NOT EXISTS idx_environment_logs_env_id ON environment_logs(env_i
 		`ALTER TABLE tasks ADD COLUMN resume_answer   TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE tasks ADD COLUMN failover     INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE tasks ADD COLUMN retry_after  DATETIME`,
+		`ALTER TABLE tasks ADD COLUMN profile      TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, m := range migrations {
 		db.sql.Exec(m) // ignore error: "duplicate column name" is expected on re-open
