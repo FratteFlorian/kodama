@@ -42,10 +42,9 @@
             <div class="form-group">
                 <label for="runtime_mode">Command Runtime</label>
                 <select id="runtime_mode" name="runtime_mode">
-                    <option value="docker" selected>Docker (Recommended)</option>
-                    <option value="host">Host</option>
+                    <option value="host" selected>Host</option>
                 </select>
-                <small class="form-hint">Agent still runs on the host. This controls where build/test commands run.</small>
+                <small class="form-hint">Host runtime is currently the only supported mode.</small>
             </div>
             <div class="form-group">
                 <label for="prd">Project Description / PRD</label>

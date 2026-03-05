@@ -125,7 +125,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		agent = "codex"
 	}
 	if runtimeMode == "" {
-		runtimeMode = "docker"
+		runtimeMode = "host"
 	}
 
 	slog.Info("creating project", "name", name, "repo_path", repoPath, "agent", agent)
@@ -741,19 +741,7 @@ func (s *Server) handleRecreateDockerFiles(w http.ResponseWriter, r *http.Reques
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	if strings.TrimSpace(proj.RepoPath) == "" {
-		http.Redirect(w, r, fmt.Sprintf("/projects/%d?msg=docker_recreate_missing_repo", proj.ID), http.StatusSeeOther)
-		return
-	}
-
-	if _, err := daemon.RecreateDockerScaffold(proj.RepoPath); err != nil {
-		slog.Warn("recreate docker scaffold failed", "project_id", proj.ID, "repo_path", proj.RepoPath, "err", err)
-		http.Redirect(w, r, fmt.Sprintf("/projects/%d?msg=docker_recreate_failed", proj.ID), http.StatusSeeOther)
-		return
-	}
-
-	slog.Info("docker scaffold recreated", "project_id", proj.ID, "repo_path", proj.RepoPath)
-	http.Redirect(w, r, fmt.Sprintf("/projects/%d?msg=docker_recreated", proj.ID), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/projects/%d?msg=docker_not_supported", proj.ID), http.StatusSeeOther)
 }
 
 func (s *Server) handleTask(w http.ResponseWriter, r *http.Request) {
@@ -1090,7 +1078,7 @@ func (s *Server) apiCreateProject(w http.ResponseWriter, r *http.Request) {
 		req.Agent = "codex"
 	}
 	if req.RuntimeMode == "" {
-		req.RuntimeMode = "docker"
+		req.RuntimeMode = "host"
 	}
 	req.RuntimeMode = normalizeRuntimeMode(req.RuntimeMode)
 	proj, err := s.db.CreateProject(req.Name, req.RepoPath, req.DockerImage, req.Agent, false)
@@ -1262,14 +1250,7 @@ func effectiveAgentName(taskAgent, projectAgent string) string {
 }
 
 func normalizeRuntimeMode(raw string) string {
-	switch strings.TrimSpace(strings.ToLower(raw)) {
-	case "docker":
-		return "docker"
-	case "host", "":
-		return "host"
-	default:
-		return "host"
-	}
+	return "host"
 }
 
 func (s *Server) apiDeleteTask(w http.ResponseWriter, r *http.Request) {

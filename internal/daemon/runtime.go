@@ -30,12 +30,7 @@ const (
 )
 
 func normalizeRuntimeMode(raw string) string {
-	switch raw {
-	case runtimeModeDocker:
-		return runtimeModeDocker
-	default:
-		return runtimeModeHost
-	}
+	return runtimeModeHost
 }
 
 func (d *Daemon) ensureProjectRuntime(ctx context.Context, proj *db.Project) error {

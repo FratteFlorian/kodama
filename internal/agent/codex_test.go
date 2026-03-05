@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -83,4 +85,22 @@ func TestCodexAgentCaptureTokenCountTurnCompleted(t *testing.T) {
 	in, out := a.TokensUsed()
 	assert.Equal(t, int64(11), in)
 	assert.Equal(t, int64(22), out)
+}
+
+func TestFindRecentCodexSessionIDFromDisk(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CODEX_HOME", tmp)
+
+	workdir := filepath.Join(tmp, "repo")
+	require.NoError(t, os.MkdirAll(workdir, 0755))
+
+	sessionDir := filepath.Join(tmp, "sessions", "2026", "03", "05")
+	require.NoError(t, os.MkdirAll(sessionDir, 0755))
+	sessionFile := filepath.Join(sessionDir, "rollout-2026-03-05T12-00-00-11111111-2222-3333-4444-555555555555.jsonl")
+	content := `{"type":"session_meta","payload":{"id":"11111111-2222-3333-4444-555555555555","cwd":"` + workdir + `"}}` + "\n" +
+		`{"type":"event_msg","payload":{"type":"agent_message","message":"hello"}}` + "\n"
+	require.NoError(t, os.WriteFile(sessionFile, []byte(content), 0644))
+
+	sid := findRecentCodexSessionID(workdir, time.Now().Add(-1*time.Minute))
+	assert.Equal(t, "11111111-2222-3333-4444-555555555555", sid)
 }

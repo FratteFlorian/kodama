@@ -6,11 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // CodexAgent wraps the `codex` CLI subprocess.
@@ -23,6 +27,8 @@ type CodexAgent struct {
 	mu              sync.Mutex
 	stdin2          interface{ Write([]byte) (int, error) }
 	sessionID       string
+	runWorkdir      string
+	runStarted      time.Time
 	lastErr         error
 	inputTokens     int64
 	outputTokens    int64
@@ -45,6 +51,10 @@ func NewCodexAgent(binary string) *CodexAgent {
 func (a *CodexAgent) Start(workdir, task, contextFile string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
+	a.mu.Lock()
+	a.runWorkdir = workdir
+	a.runStarted = time.Now()
+	a.mu.Unlock()
 
 	var args []string
 	if strings.HasPrefix(task, "RESUME:") {
@@ -182,8 +192,24 @@ func (a *CodexAgent) Detect(line string) (Signal, string) {
 // SessionID returns the session ID captured from codex --json session_meta events.
 func (a *CodexAgent) SessionID() string {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.sessionID
+	sid := a.sessionID
+	workdir := a.runWorkdir
+	started := a.runStarted
+	a.mu.Unlock()
+	if sid != "" {
+		return sid
+	}
+	// Fallback for codex versions/run modes that do not emit session_meta on stdout.
+	if inferred := findRecentCodexSessionID(workdir, started); inferred != "" {
+		a.mu.Lock()
+		if a.sessionID == "" {
+			a.sessionID = inferred
+			slog.Info("codex session ID inferred from local session files", "session_id", inferred)
+		}
+		sid = a.sessionID
+		a.mu.Unlock()
+	}
+	return sid
 }
 
 // CostUSD returns 0 — codex CLI events do not expose cost in current integration.
@@ -295,6 +321,94 @@ func normalizeInputTokens(input, cached int64) int64 {
 		return 0
 	}
 	return effective
+}
+
+func findRecentCodexSessionID(workdir string, started time.Time) string {
+	root := codexSessionsRoot()
+	if root == "" {
+		return ""
+	}
+	type candidate struct {
+		path string
+		mod  time.Time
+	}
+	candidates := make([]candidate, 0, 64)
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d == nil || d.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(strings.ToLower(d.Name()), ".jsonl") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		// Keep a narrow window around this run to avoid picking unrelated sessions.
+		if !started.IsZero() && info.ModTime().Before(started.Add(-10*time.Minute)) {
+			return nil
+		}
+		candidates = append(candidates, candidate{path: path, mod: info.ModTime()})
+		return nil
+	})
+	if len(candidates) == 0 {
+		return ""
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].mod.After(candidates[j].mod)
+	})
+	limit := len(candidates)
+	if limit > 30 {
+		limit = 30
+	}
+	for i := 0; i < limit; i++ {
+		if sid := readSessionMetaIDForCWD(candidates[i].path, workdir); sid != "" {
+			return sid
+		}
+	}
+	return ""
+}
+
+func codexSessionsRoot() string {
+	if v := strings.TrimSpace(os.Getenv("CODEX_HOME")); v != "" {
+		return filepath.Join(v, "sessions")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return ""
+	}
+	return filepath.Join(home, ".codex", "sessions")
+}
+
+func readSessionMetaIDForCWD(path, workdir string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	rd := bufio.NewReader(f)
+	line, err := rd.ReadString('\n')
+	if err != nil && len(line) == 0 {
+		return ""
+	}
+	var ev struct {
+		Type    string `json:"type"`
+		Payload struct {
+			ID  string `json:"id"`
+			CWD string `json:"cwd"`
+		} `json:"payload"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(line)), &ev); err != nil {
+		return ""
+	}
+	if ev.Type != "session_meta" || ev.Payload.ID == "" {
+		return ""
+	}
+	if strings.TrimSpace(workdir) == "" || ev.Payload.CWD == workdir {
+		return ev.Payload.ID
+	}
+	return ""
 }
 
 func (a *CodexAgent) captureSessionID(line string) {

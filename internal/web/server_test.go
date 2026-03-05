@@ -213,13 +213,10 @@ func TestProjectPageReturns200(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "test")
 }
 
-func TestRecreateDockerFilesRouteOverwritesScaffold(t *testing.T) {
+func TestRecreateDockerFilesRouteShowsNotSupported(t *testing.T) {
 	srv, database := newTestServer(t)
 	repo := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(repo, "package.json"), []byte("{\"name\":\"x\"}\n"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(repo, "Dockerfile"), []byte("FROM alpine:3.20\n"), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(repo, "docker-compose.yml"), []byte("services: {}\n"), 0644))
-	require.NoError(t, os.WriteFile(filepath.Join(repo, ".dockerignore"), []byte(".git\n"), 0644))
 
 	proj, err := database.CreateProject("test", repo, "", "codex", false)
 	require.NoError(t, err)
@@ -228,12 +225,11 @@ func TestRecreateDockerFilesRouteOverwritesScaffold(t *testing.T) {
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusSeeOther, rec.Code)
-	assert.Contains(t, rec.Header().Get("Location"), "msg=docker_recreated")
+	assert.Contains(t, rec.Header().Get("Location"), "msg=docker_not_supported")
 
 	df, err := os.ReadFile(filepath.Join(repo, "Dockerfile"))
 	require.NoError(t, err)
-	assert.Contains(t, string(df), "FROM node:22-bookworm")
-	assert.NotContains(t, string(df), "FROM alpine:3.20")
+	assert.Contains(t, string(df), "FROM alpine:3.20")
 }
 
 func TestCreateTaskWithAttachment(t *testing.T) {

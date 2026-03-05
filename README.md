@@ -43,7 +43,7 @@ On first start, complete the setup page in the browser (Telegram can be left emp
 
 - `codex` CLI installed and authenticated (default agent; typically via subscription)
 - `claude` CLI installed and authenticated (optional for Claude-based tasks; typically via subscription)
-- Docker (optional, required for projects using `docker` command runtime)
+- Docker support is currently disabled (host runtime only)
 
 Cost note:
 
@@ -54,22 +54,27 @@ Cost note:
 ## Runtime Model
 
 - Agents (`codex` / `claude`) always run on the host.
-- Project commands (build/test/lint/etc.) run either on `host` or `docker`, per project.
-- In `docker` mode, Kodama can scaffold missing `Dockerfile`/`docker-compose.yml` for the managed project repository.
+- Project commands (build/test/lint/etc.) currently run on `host`.
+- Host runtime is currently the only supported command runtime mode.
+
+### Why Docker Is Disabled (For Now)
+
+Docker runtime support was temporarily disabled because it was not reliable enough in real project runs (environment startup/scaffold behavior still needs more work). Keeping only host runtime avoids flaky task execution and gives predictable behavior while core task orchestration and protocol handling stabilize.
+
+Docker support is planned to return once it can be reintroduced with clear guarantees and better end-to-end reliability.
 
 ## Features
 
 - **Web UI**: Project/backlog management, live task output streaming via WebSocket
-- **Telegram**: Notifications when Claude Code has questions; reply to answer
+- **Telegram**: Notifications when tasks have questions; reply to answer
 - **Rate limit handling**: Handles `KODAMA_RATELIMIT` signals, saves checkpoint, retries after 5h
 - **YOLO failover**: Optional per-task switch (Claude→Codex) on rate limit
-- **Command runtime mode**: Keep agents on host, run build/test commands on host or in auto-managed Docker
+- **Command runtime mode**: Host-only (agents and commands run on host)
 - **Multi-agent**: Per-task agent selection (Claude Code or Codex)
 - **Parallel projects**: Multiple projects can run concurrently; each project executes its own backlog sequentially
 - **Task profiles**: Per-task execution profile (Architect, Developer, QA, Refactorer, Incident, UX Reviewer)
 - **Input attachments**: Attach PDFs/images/files to project PRDs and tasks
 - **PRD task planning**: Generate backlog tasks from PRD context and auto-import structured plans
-- **Auto Docker scaffold**: Generates `Dockerfile` + `docker-compose.yml` when Docker runtime is enabled and files are missing
 
 ## Configuration
 
@@ -93,6 +98,7 @@ Notes:
 - `KODAMA_LOG`: set to `INFO` to reduce log verbosity (default is `DEBUG`).
 - `KODAMA_QUESTION_TIMEOUT` and `KODAMA_WAITING_REMINDER` are seconds.
 - Set `KODAMA_WAITING_REMINDER=0` to disable waiting reminders.
+- `KODAMA_DOCKER_SOCKET` is currently ignored while host-only runtime is active.
 
 ## Project Bootstrap (`kodama.yml`)
 
