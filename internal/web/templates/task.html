@@ -58,6 +58,10 @@
     <section class="task-output">
         <h2>Output
             <span id="running-indicator" class="running-indicator" title="Agent is processing — output appears when done" {{if ne .Task.Status "running"}}style="display:none"{{end}}>⏳ working…</span>
+            <label class="inline-checkbox" style="margin-left:12px; font-size:.8rem;">
+                <input type="checkbox" id="output-details-toggle">
+                <span>Details</span>
+            </label>
         </h2>
         <div id="output-container" class="output-box">
             <pre id="output">{{.Log}}</pre>
@@ -105,6 +109,7 @@
     const taskID = {{.Task.ID}};
     let currentStatus = "{{.Task.Status}}";
     const output = document.getElementById('output');
+    const detailsToggle = document.getElementById('output-details-toggle');
     const badge = document.getElementById('task-status-badge');
     const waitingSection = document.getElementById('answer-form-section');
     const runningIndicator = document.getElementById('running-indicator');
@@ -135,7 +140,34 @@
     const live = isLive(currentStatus);
     const wsURL = live ? 'ws://' + window.location.host + '/ws/tasks/' + taskID : null;
 
-    colorizeOutput(output, wsURL);
+    function isOverviewLine(line) {
+        if (!line) return false;
+        if (line.indexOf('KODAMA_') === 0) return true;
+        if (line.indexOf('[agent ') === 0) return true;
+        if (line.indexOf('[still running') === 0) return true;
+        if (line.indexOf('[error') === 0) return true;
+        if (line.indexOf('[completed') === 0) return true;
+        if (line.indexOf('[User answered') === 0) return true;
+        if (line.indexOf('[imported ') === 0) return true;
+        if (line.indexOf('[tool error]') === 0) return true;
+        if (line.indexOf('[still waiting for input') === 0) return true;
+        return false;
+    }
+
+    const controller = colorizeOutput(output, wsURL, {
+        lineFilter: isOverviewLine
+    });
+
+    if (detailsToggle) {
+        detailsToggle.checked = false;
+        detailsToggle.addEventListener('change', function() {
+            if (detailsToggle.checked) {
+                controller.setLineFilter(null); // Details: show all lines.
+            } else {
+                controller.setLineFilter(isOverviewLine); // Overview.
+            }
+        });
+    }
 
     // Poll and update live status/UI without full-page reload.
     setInterval(function() {

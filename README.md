@@ -122,7 +122,7 @@ Agents communicate with Kodama via structured prefixes in stdout:
 | `KODAMA_DECISION:` | Architectural decision (updates kodama.md) |
 | `KODAMA_BLOCKED:` | Cannot proceed |
 
-All agents must emit the protocol lines for reliable status detection. Codex runs in full-auto mode, so any questions will be handled by stopping the run and resuming via injected context (no session resume).
+All agents must emit the protocol lines for reliable status detection. Codex runs in full-auto mode and now supports session resume via `codex exec resume` when Kodama captures a session ID.
 
 ## Telegram Commands
 

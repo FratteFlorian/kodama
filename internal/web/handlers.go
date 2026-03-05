@@ -419,6 +419,19 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	failover := r.FormValue("failover") == "on"
+	var followupSessionID string
+	if sourceID := strings.TrimSpace(r.FormValue("resume_from_task_id")); sourceID != "" {
+		id, err := strconv.ParseInt(sourceID, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid resume_from_task_id", http.StatusBadRequest)
+			return
+		}
+		followupSessionID, err = s.resolveFollowupSession(id, proj, agent)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	if r.MultipartForm != nil {
 		if err := validateAttachments(r.MultipartForm.File["attachments"]); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -430,6 +443,12 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if followupSessionID != "" {
+		if err := s.db.UpdateTaskSessionID(task.ID, followupSessionID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 	if err := s.db.UpdateTaskProfile(task.ID, profile); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1114,10 +1133,20 @@ func (s *Server) apiCreateTask(w http.ResponseWriter, r *http.Request) {
 		Profile     string `json:"profile"`
 		Priority    int    `json:"priority"`
 		Failover    bool   `json:"failover"`
+		ResumeFrom  int64  `json:"resume_from_task_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
+	}
+	var followupSessionID string
+	if req.ResumeFrom > 0 {
+		followup, err := s.resolveFollowupSession(req.ResumeFrom, proj, req.Agent)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		followupSessionID = followup
 	}
 	task, err := s.db.CreateTask(proj.ID, req.Description, req.Agent, req.Priority, req.Failover)
 	if err != nil {
@@ -1128,9 +1157,36 @@ func (s *Server) apiCreateTask(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if followupSessionID != "" {
+		if err := s.db.UpdateTaskSessionID(task.ID, followupSessionID); err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
 	w.WriteHeader(http.StatusCreated)
 	created, _ := s.db.GetTask(task.ID)
 	jsonOK(w, created)
+}
+
+func (s *Server) resolveFollowupSession(sourceTaskID int64, proj *db.Project, requestedAgent string) (string, error) {
+	source, err := s.db.GetTask(sourceTaskID)
+	if err != nil {
+		return "", fmt.Errorf("source task not found")
+	}
+	if source.ProjectID != proj.ID {
+		return "", fmt.Errorf("source task belongs to another project")
+	}
+	if source.SessionID == "" {
+		return "", fmt.Errorf("source task has no session id")
+	}
+	targetAgent := effectiveAgentName(requestedAgent, proj.Agent)
+	if strings.TrimSpace(source.Agent) != "" {
+		sourceAgent := effectiveAgentName(source.Agent, proj.Agent)
+		if targetAgent != sourceAgent {
+			return "", fmt.Errorf("agent mismatch: source task uses %s but new task uses %s", sourceAgent, targetAgent)
+		}
+	}
+	return source.SessionID, nil
 }
 
 func (s *Server) apiGetTask(w http.ResponseWriter, r *http.Request) {
@@ -1192,6 +1248,17 @@ func normalizeTaskProfile(raw string) string {
 	default:
 		return ""
 	}
+}
+
+func effectiveAgentName(taskAgent, projectAgent string) string {
+	agentName := strings.TrimSpace(strings.ToLower(taskAgent))
+	if agentName == "" {
+		agentName = strings.TrimSpace(strings.ToLower(projectAgent))
+	}
+	if agentName == "" {
+		return "codex"
+	}
+	return agentName
 }
 
 func normalizeRuntimeMode(raw string) string {

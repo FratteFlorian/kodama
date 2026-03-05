@@ -268,6 +268,67 @@ func TestCreateTaskWithAttachment(t *testing.T) {
 	assert.Equal(t, "spec.pdf", files[0].Name)
 }
 
+func TestCreateTaskFollowupSessionCopiesSessionID(t *testing.T) {
+	srv, database := newTestServer(t)
+	proj, err := database.CreateProject("p", "/tmp", "", "codex", false)
+	require.NoError(t, err)
+
+	source, err := database.CreateTask(proj.ID, "source", "codex", 0, false)
+	require.NoError(t, err)
+	require.NoError(t, database.UpdateTaskSessionID(source.ID, "sess-123"))
+
+	form := url.Values{}
+	form.Set("description", "follow-up task")
+	form.Set("agent", "codex")
+	form.Set("profile", "developer")
+	form.Set("priority", "1")
+	form.Set("resume_from_task_id", itoa(source.ID))
+	req := httptest.NewRequest(http.MethodPost, "/projects/"+itoa(proj.ID)+"/tasks", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusSeeOther, rec.Code)
+
+	tasks, err := database.ListTasks(proj.ID)
+	require.NoError(t, err)
+	require.Len(t, tasks, 2)
+	var followup *db.Task
+	for _, tsk := range tasks {
+		if tsk.Description == "follow-up task" {
+			followup = tsk
+			break
+		}
+	}
+	require.NotNil(t, followup)
+	assert.Equal(t, "sess-123", followup.SessionID)
+}
+
+func TestCreateTaskFollowupSessionRejectsAgentMismatch(t *testing.T) {
+	srv, database := newTestServer(t)
+	proj, err := database.CreateProject("p", "/tmp", "", "codex", false)
+	require.NoError(t, err)
+
+	source, err := database.CreateTask(proj.ID, "source", "codex", 0, false)
+	require.NoError(t, err)
+	require.NoError(t, database.UpdateTaskSessionID(source.ID, "sess-123"))
+
+	form := url.Values{}
+	form.Set("description", "bad follow-up")
+	form.Set("agent", "claude")
+	form.Set("profile", "developer")
+	form.Set("priority", "1")
+	form.Set("resume_from_task_id", itoa(source.ID))
+	req := httptest.NewRequest(http.MethodPost, "/projects/"+itoa(proj.ID)+"/tasks", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	tasks, err := database.ListTasks(proj.ID)
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+}
+
 func TestCreateTaskRejectsUnsupportedAttachment(t *testing.T) {
 	srv, database := newTestServer(t)
 	proj, err := database.CreateProject("p", "/tmp", "", "claude", false)

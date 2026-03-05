@@ -38,6 +38,7 @@
     }
 
     const MAX_RENDERED_LINES = 4000;
+    const MAX_STORED_LINES = 20000;
 
     function lineToNode(line) {
         const span = document.createElement('span');
@@ -55,13 +56,15 @@
         return lines;
     }
 
-    function appendLines(el, container, lines) {
+    function appendLines(el, container, lines, lineFilter) {
         if (!lines || lines.length === 0) return;
 
         const stickToBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 24;
         const frag = document.createDocumentFragment();
         for (let i = 0; i < lines.length; i++) {
-            frag.appendChild(lineToNode(lines[i]));
+            if (!lineFilter || lineFilter(lines[i])) {
+                frag.appendChild(lineToNode(lines[i]));
+            }
         }
         el.appendChild(frag);
 
@@ -75,16 +78,60 @@
         }
     }
 
+    function normaliseColorizeArgs(onCloseOrOptions, maybeOptions) {
+        let onClose = null;
+        let options = {};
+
+        if (typeof onCloseOrOptions === 'function') {
+            onClose = onCloseOrOptions;
+            options = maybeOptions || {};
+        } else if (onCloseOrOptions && typeof onCloseOrOptions === 'object') {
+            options = onCloseOrOptions;
+            if (typeof options.onClose === 'function') {
+                onClose = options.onClose;
+            }
+        }
+        return { onClose: onClose, options: options };
+    }
+
     // colorizeOutput initialises a <pre> element with colorized content and
     // optionally connects a WebSocket for live streaming.
     //
     //   el        — the <pre> DOM element
     //   wsURL     — WebSocket URL, or null for static-only mode
-    //   onClose   — optional callback when the socket closes
-    window.colorizeOutput = function(el, wsURL, onClose) {
+    //   onClose/options — either onClose callback or options object
+    // options:
+    //   lineFilter(line) => boolean  (optional)
+    //   onClose()                    (optional)
+    //
+    // returns controller:
+    //   setLineFilter(fn)
+    window.colorizeOutput = function(el, wsURL, onCloseOrOptions, maybeOptions) {
+        const parsed = normaliseColorizeArgs(onCloseOrOptions, maybeOptions);
+        const onClose = parsed.onClose;
+        const options = parsed.options;
+        let lineFilter = typeof options.lineFilter === 'function' ? options.lineFilter : null;
+
         const container = el.parentElement;
+        const allLines = [];
         let queuedLines = [];
         let flushScheduled = false;
+
+        function rebuildFromStore() {
+            const stickToBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 24;
+            el.textContent = '';
+            const filtered = [];
+            for (let i = 0; i < allLines.length; i++) {
+                if (!lineFilter || lineFilter(allLines[i])) {
+                    filtered.push(allLines[i]);
+                }
+            }
+            const start = Math.max(0, filtered.length - MAX_RENDERED_LINES);
+            appendLines(el, container, filtered.slice(start), null);
+            if (stickToBottom) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
 
         function scheduleFlush() {
             if (flushScheduled) return;
@@ -92,7 +139,13 @@
             requestAnimationFrame(function() {
                 flushScheduled = false;
                 if (queuedLines.length === 0) return;
-                appendLines(el, container, queuedLines);
+                for (let i = 0; i < queuedLines.length; i++) {
+                    allLines.push(queuedLines[i]);
+                }
+                if (allLines.length > MAX_STORED_LINES) {
+                    allLines.splice(0, allLines.length - MAX_STORED_LINES);
+                }
+                appendLines(el, container, queuedLines, lineFilter);
                 queuedLines = [];
             });
         }
@@ -100,11 +153,20 @@
         // Colorize any content already in the element (e.g. loaded from DB).
         if (el.textContent) {
             const initial = splitCompleteLines(el.textContent);
-            el.textContent = '';
-            appendLines(el, container, initial);
+            for (let i = 0; i < initial.length; i++) {
+                allLines.push(initial[i]);
+            }
+            rebuildFromStore();
         }
 
-        if (!wsURL) return;
+        const controller = {
+            setLineFilter: function(nextFilter) {
+                lineFilter = typeof nextFilter === 'function' ? nextFilter : null;
+                rebuildFromStore();
+            },
+        };
+
+        if (!wsURL) return controller;
 
         const ws = new WebSocket(wsURL);
         let buf = ''; // partial-line buffer
@@ -136,5 +198,7 @@
 
         // Initial scroll to bottom.
         container.scrollTop = container.scrollHeight;
+
+        return controller;
     };
 })();

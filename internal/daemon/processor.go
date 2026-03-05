@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -44,6 +45,7 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 
 	// Build task prompt, prepending checkpoint if resuming.
 	baseTask := applyTaskProfile(task.Description, task.Profile)
+	baseTask = withProtocolReminder(baseTask, proj)
 	prompt := baseTask
 	if task.Status == db.TaskStatusRateLimited {
 		cp, err := d.db.GetLatestCheckpoint(task.ID)
@@ -72,6 +74,14 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 			)
 		}
 		d.db.ClearTaskResume(task.ID)
+	}
+	// Follow-up task mode: start a new pending task by resuming a selected prior
+	// session and sending the new task description as the next user message.
+	if task.Status == db.TaskStatusPending &&
+		task.SessionID != "" &&
+		task.ResumeQuestion == "" &&
+		task.ResumeAnswer == "" {
+		prompt = fmt.Sprintf("RESUME:%s\n%s", task.SessionID, baseTask)
 	}
 
 	// Inject dev environment context if an environment is running for this project.
@@ -181,53 +191,69 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 				d.hub.Broadcast(task.ID, line)
 			}
 
-			// Detect signals.
-			sig, payload := ag.Detect(line)
-			if sig != agent.SignalNone {
-				slog.Info("signal detected", "task_id", task.ID, "signal", sig, "payload", payload)
-			}
-			switch sig {
-			case agent.SignalQuestion:
-				if err := d.handleQuestion(ctx, task, payload, ag); err != nil {
-					slog.Error("handle question failed", "task_id", task.ID, "err", err)
-					d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
-					done = true
-				} else {
-					// Agent was stopped by handleQuestion; drain remaining output then
-					// return so runProject re-runs the task with updated description.
-					for range ag.Output() {
-					}
-					return
+			// Detect signals line-by-line. JSON mode may emit multi-line chunks.
+			chunkFinalised := false
+			for _, signalLine := range strings.Split(line, "\n") {
+				if strings.TrimSpace(signalLine) == "" {
+					continue
 				}
+				sig, payload := ag.Detect(signalLine)
+				if sig == agent.SignalNone {
+					continue
+				}
+				slog.Info("signal detected", "task_id", task.ID, "signal", sig, "payload", payload)
+				switch sig {
+				case agent.SignalQuestion:
+					if err := d.handleQuestion(ctx, task, payload, ag); err != nil {
+						slog.Error("handle question failed", "task_id", task.ID, "err", err)
+						d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
+						done = true
+					} else {
+						// Agent was stopped by handleQuestion; drain remaining output then
+						// return so runProject re-runs the task with updated description.
+						for range ag.Output() {
+						}
+						return
+					}
+					chunkFinalised = true
 
-			case agent.SignalDone:
-				doneSummary = payload
-				d.db.UpdateTaskStatus(task.ID, db.TaskStatusDone)
-				d.sendNotification(formatTaskMsg(proj.Name, task.ID, fmt.Sprintf("done: %s", payload)))
-				slog.Info("task done", "task_id", task.ID, "summary", payload)
-				finalised = true
-				done = true
+				case agent.SignalDone:
+					doneSummary = payload
+					d.db.UpdateTaskStatus(task.ID, db.TaskStatusDone)
+					d.sendNotification(formatTaskMsg(proj.Name, task.ID, fmt.Sprintf("done: %s", payload)))
+					slog.Info("task done", "task_id", task.ID, "summary", payload)
+					finalised = true
+					done = true
+					chunkFinalised = true
 
-			case agent.SignalRateLimited:
-				slog.Warn("rate limit hit", "task_id", task.ID)
-				ag.Stop()
-				d.handleRateLimit(ctx, task, outputBuf.String(), entry)
-				return
+				case agent.SignalRateLimited:
+					slog.Warn("rate limit hit", "task_id", task.ID)
+					ag.Stop()
+					d.handleRateLimit(ctx, task, outputBuf.String(), entry)
+					return
 
-			case agent.SignalBlocked:
-				d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
-				d.sendNotification(formatTaskMsg(proj.Name, task.ID, fmt.Sprintf("blocked: %s", payload)))
-				slog.Warn("task blocked", "task_id", task.ID, "reason", payload)
-				finalised = true
-				done = true
+				case agent.SignalBlocked:
+					d.db.UpdateTaskStatus(task.ID, db.TaskStatusFailed)
+					d.sendNotification(formatTaskMsg(proj.Name, task.ID, fmt.Sprintf("blocked: %s", payload)))
+					slog.Warn("task blocked", "task_id", task.ID, "reason", payload)
+					finalised = true
+					done = true
+					chunkFinalised = true
 
-			case agent.SignalDecision:
-				slog.Info("decision recorded", "task_id", task.ID, "decision", payload)
-				decisions = append(decisions, payload)
+				case agent.SignalDecision:
+					slog.Info("decision recorded", "task_id", task.ID, "decision", payload)
+					decisions = append(decisions, payload)
 
-			case agent.SignalPR:
-				slog.Info("PR created", "task_id", task.ID, "url", payload)
-				d.sendNotification(formatTaskMsg(proj.Name, task.ID, fmt.Sprintf("PR: %s", payload)))
+				case agent.SignalPR:
+					slog.Info("PR created", "task_id", task.ID, "url", payload)
+					d.sendNotification(formatTaskMsg(proj.Name, task.ID, fmt.Sprintf("PR: %s", payload)))
+				}
+				if chunkFinalised {
+					break
+				}
+			}
+			if chunkFinalised {
+				continue
 			}
 
 		case <-timer.C:
@@ -322,6 +348,18 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 			slog.Warn("update kodama.md", "err", err)
 		}
 	}
+}
+
+func withProtocolReminder(task string, proj *db.Project) string {
+	kodamaPath := "kodama.md"
+	if proj != nil && strings.TrimSpace(proj.RepoPath) != "" {
+		kodamaPath = filepath.Join(proj.RepoPath, "kodama.md")
+	}
+	return fmt.Sprintf(
+		"Read %s first and strictly follow its communication protocol.\n"+
+			"Emit protocol markers exactly as defined there (e.g. KODAMA_QUESTION:, KODAMA_DONE:, KODAMA_RATELIMIT:, KODAMA_BLOCKED:, KODAMA_PR:, KODAMA_DECISION:).\n\n%s",
+		kodamaPath, task,
+	)
 }
 
 // handleQuestion handles a KODAMA_QUESTION signal by notifying the user, waiting

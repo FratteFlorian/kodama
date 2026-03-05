@@ -120,6 +120,33 @@ func TestTaskLifecycleDone(t *testing.T) {
 	}, 2*time.Second, 50*time.Millisecond)
 }
 
+func TestTaskLifecycleDoneFromMultilineChunk(t *testing.T) {
+	database, err := db.Open(t.TempDir())
+	require.NoError(t, err)
+	defer database.Close()
+
+	cfg := &config.Config{QuestionTimeout: 2 * time.Second}
+	d := New(cfg, database, nil, nil)
+
+	proj, err := database.CreateProject("p", "/tmp", "", "codex", false)
+	require.NoError(t, err)
+	task, err := database.CreateTask(proj.ID, "do work", "", 0, false)
+	require.NoError(t, err)
+
+	d.SetAgentFactory(func(task *db.Task, proj *db.Project) (agent.Agent, string) {
+		ch := make(chan string, 1)
+		ch <- "progress line\nKODAMA_DONE: ok\n"
+		close(ch)
+		return &fakeAgent{output: ch}, "codex"
+	})
+
+	require.NoError(t, d.StartProject(context.Background(), proj.ID))
+	require.Eventually(t, func() bool {
+		got, _ := database.GetTask(task.ID)
+		return got.Status == db.TaskStatusDone
+	}, 2*time.Second, 50*time.Millisecond)
+}
+
 func TestQuestionFlowSetsWaiting(t *testing.T) {
 	database, err := db.Open(t.TempDir())
 	require.NoError(t, err)
@@ -213,6 +240,43 @@ func TestAnswerQuestionAfterRestartResumesTask(t *testing.T) {
 	mu.Unlock()
 	require.Contains(t, prompt, "Use SQLite.")
 	require.Contains(t, prompt, "Answer to")
+}
+
+func TestAnswerQuestionAfterRestartResumesWithSessionID(t *testing.T) {
+	database, err := db.Open(t.TempDir())
+	require.NoError(t, err)
+	defer database.Close()
+
+	cfg := &config.Config{QuestionTimeout: 2 * time.Second}
+	proj, err := database.CreateProject("p", "/tmp", "", "codex", false)
+	require.NoError(t, err)
+	task, err := database.CreateTask(proj.ID, "do work", "", 0, false)
+	require.NoError(t, err)
+	require.NoError(t, database.UpdateTaskStatus(task.ID, db.TaskStatusWaiting))
+	require.NoError(t, database.UpdateTaskResume(task.ID, "choose db", ""))
+	require.NoError(t, database.UpdateTaskSessionID(task.ID, "codex-session-xyz"))
+
+	var mu sync.Mutex
+	var gotPrompt string
+	d2 := New(cfg, database, nil, nil)
+	d2.SetAgentFactory(func(task *db.Task, proj *db.Project) (agent.Agent, string) {
+		return newCaptureAgent(func(p string) {
+			mu.Lock()
+			gotPrompt = p
+			mu.Unlock()
+		}, "KODAMA_DONE: resumed"), "codex"
+	})
+
+	require.NoError(t, d2.AnswerQuestion(task.ID, "Use SQLite."))
+	require.Eventually(t, func() bool {
+		got, _ := database.GetTask(task.ID)
+		return got.Status == db.TaskStatusDone
+	}, 2*time.Second, 50*time.Millisecond)
+
+	mu.Lock()
+	prompt := gotPrompt
+	mu.Unlock()
+	require.Equal(t, "RESUME:codex-session-xyz\nUse SQLite.", prompt)
 }
 
 func TestAnswerQuestionReplacesStaleBufferedChannelValue(t *testing.T) {
@@ -326,6 +390,81 @@ func TestTaskPromptIncludesAttachmentContext(t *testing.T) {
 	require.Contains(t, prompt, "Reference files are available for this task")
 	require.Contains(t, prompt, projectPath)
 	require.Contains(t, prompt, taskPath)
+}
+
+func TestTaskPromptIncludesProtocolReminder(t *testing.T) {
+	database, err := db.Open(t.TempDir())
+	require.NoError(t, err)
+	defer database.Close()
+
+	cfg := &config.Config{QuestionTimeout: 2 * time.Second}
+	d := New(cfg, database, nil, nil)
+
+	proj, err := database.CreateProject("p", "/tmp/repo", "", "codex", false)
+	require.NoError(t, err)
+	task, err := database.CreateTask(proj.ID, "do work", "", 0, false)
+	require.NoError(t, err)
+
+	var mu sync.Mutex
+	var gotPrompt string
+	d.SetAgentFactory(func(task *db.Task, proj *db.Project) (agent.Agent, string) {
+		return newCaptureAgent(func(p string) {
+			mu.Lock()
+			gotPrompt = p
+			mu.Unlock()
+		}, "KODAMA_DONE: ok"), "codex"
+	})
+
+	require.NoError(t, d.StartProject(context.Background(), proj.ID))
+	require.Eventually(t, func() bool {
+		got, _ := database.GetTask(task.ID)
+		return got.Status == db.TaskStatusDone
+	}, 2*time.Second, 50*time.Millisecond)
+
+	mu.Lock()
+	prompt := gotPrompt
+	mu.Unlock()
+	require.Contains(t, prompt, "Read /tmp/repo/kodama.md first")
+	require.Contains(t, prompt, "KODAMA_QUESTION:")
+	require.Contains(t, prompt, "KODAMA_DONE:")
+}
+
+func TestPendingTaskWithSessionIDStartsAsFollowupResume(t *testing.T) {
+	database, err := db.Open(t.TempDir())
+	require.NoError(t, err)
+	defer database.Close()
+
+	cfg := &config.Config{QuestionTimeout: 2 * time.Second}
+	d := New(cfg, database, nil, nil)
+
+	proj, err := database.CreateProject("p", "/tmp", "", "codex", false)
+	require.NoError(t, err)
+	task, err := database.CreateTask(proj.ID, "continue with cleanup", "", 0, false)
+	require.NoError(t, err)
+	require.NoError(t, database.UpdateTaskSessionID(task.ID, "session-abc"))
+
+	var mu sync.Mutex
+	var gotPrompt string
+	d.SetAgentFactory(func(task *db.Task, proj *db.Project) (agent.Agent, string) {
+		return newCaptureAgent(func(p string) {
+			mu.Lock()
+			gotPrompt = p
+			mu.Unlock()
+		}, "KODAMA_DONE: ok"), "codex"
+	})
+
+	require.NoError(t, d.StartProject(context.Background(), proj.ID))
+	require.Eventually(t, func() bool {
+		got, _ := database.GetTask(task.ID)
+		return got.Status == db.TaskStatusDone
+	}, 2*time.Second, 50*time.Millisecond)
+
+	mu.Lock()
+	prompt := gotPrompt
+	mu.Unlock()
+	require.Contains(t, prompt, "RESUME:session-abc\n")
+	require.Contains(t, prompt, "Read /tmp/kodama.md first and strictly follow its communication protocol.")
+	require.Contains(t, prompt, "\ncontinue with cleanup")
 }
 
 func TestPlannedTasksAreImportedFromOutput(t *testing.T) {
