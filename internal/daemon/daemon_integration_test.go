@@ -463,7 +463,8 @@ func TestPendingTaskWithSessionIDStartsAsFollowupResume(t *testing.T) {
 	prompt := gotPrompt
 	mu.Unlock()
 	require.Contains(t, prompt, "RESUME:session-abc\n")
-	require.Contains(t, prompt, "Read /tmp/kodama.md first and strictly follow its communication protocol.")
+	require.Contains(t, prompt, "Strictly follow the communication protocol markers")
+	require.NotContains(t, prompt, "Read /tmp/kodama.md first")
 	require.Contains(t, prompt, "\ncontinue with cleanup")
 }
 

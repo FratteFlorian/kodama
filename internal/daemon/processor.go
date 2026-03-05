@@ -44,8 +44,13 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	}
 
 	// Build task prompt, prepending checkpoint if resuming.
+	isFollowupResume := task.Status == db.TaskStatusPending &&
+		task.SessionID != "" &&
+		task.ResumeQuestion == "" &&
+		task.ResumeAnswer == ""
+
 	baseTask := applyTaskProfile(task.Description, task.Profile)
-	baseTask = withProtocolReminder(baseTask, proj)
+	baseTask = withProtocolReminder(baseTask, proj, !isFollowupResume)
 	prompt := baseTask
 	if task.Status == db.TaskStatusRateLimited {
 		cp, err := d.db.GetLatestCheckpoint(task.ID)
@@ -77,10 +82,7 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	}
 	// Follow-up task mode: start a new pending task by resuming a selected prior
 	// session and sending the new task description as the next user message.
-	if task.Status == db.TaskStatusPending &&
-		task.SessionID != "" &&
-		task.ResumeQuestion == "" &&
-		task.ResumeAnswer == "" {
+	if isFollowupResume {
 		prompt = fmt.Sprintf("RESUME:%s\n%s", task.SessionID, baseTask)
 	}
 
@@ -350,10 +352,16 @@ func (d *Daemon) processTask(ctx context.Context, task *db.Task) {
 	}
 }
 
-func withProtocolReminder(task string, proj *db.Project) string {
+func withProtocolReminder(task string, proj *db.Project, includeContextRef bool) string {
 	kodamaPath := "kodama.md"
 	if proj != nil && strings.TrimSpace(proj.RepoPath) != "" {
 		kodamaPath = filepath.Join(proj.RepoPath, "kodama.md")
+	}
+	if !includeContextRef {
+		return fmt.Sprintf(
+			"Strictly follow the communication protocol markers (KODAMA_QUESTION:, KODAMA_DONE:, KODAMA_RATELIMIT:, KODAMA_BLOCKED:, KODAMA_PR:, KODAMA_DECISION:).\n\n%s",
+			task,
+		)
 	}
 	return fmt.Sprintf(
 		"Read %s first and strictly follow its communication protocol.\n"+
